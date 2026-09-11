@@ -2044,3 +2044,542 @@ main.container {
     font-size: 0.78rem;
   }
 }
+
+/* =====================================================
+   REGISTER SHEET BLUEPRINT (subject sheet viewer)
+===================================================== */
+.bp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  background: var(--canvas-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+}
+
+/* Search input inside the blueprint toolbar */
+.bp-toolbar__search .input-with-icon {
+  width: 100%;
+}
+
+.bp-toolbar__search .input-with-icon input {
+  width: 100%;
+  padding: 0.6rem 0.9rem 0.6rem 2.6rem;
+  /* left pad = icon space */
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--text-main);
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.bp-toolbar__search .input-with-icon input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.bp-toolbar__search .input-with-icon input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.bp-toolbar__sort .custom-select-wrapper {
+  min-width: 200px;
+}
+
+.bp-toolbar__sort .custom-select-trigger {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.88rem;
+}
+
+.bp-toolbar__sort {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 0 0 auto;
+}
+
+.bp-sort-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.bp-toolbar__sort select {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.88rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.15s ease;
+}
+
+.bp-toolbar__sort select:hover {
+  border-color: var(--border-strong);
+}
+
+.bp-toolbar__sort select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.bp-toolbar__meta {
+  display: flex;
+  gap: 0.45rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.bp-meta-chip {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.28rem 0.6rem;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* Scroll wrap with subtle fade edges + horizontal scroll */
+.bp-scroll-wrap {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+}
+
+
+.bp-table-container {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 70vh;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.bp-table-container::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.bp-table-container::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--surface);
+}
+
+.bp-table-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bp-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.9rem;
+}
+
+/* Header */
+/* Header */
+.bp-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--canvas-alt);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 0.85rem;
+  text-align: center;
+  white-space: nowrap;
+  border-bottom: 1.5px solid var(--border);
+  border-right: 1px solid var(--border-light);
+}
+
+.bp-table thead th.bp-col-id,
+.bp-table thead th.bp-col-name {
+  text-align: left;
+  z-index: 8;
+  background: var(--canvas-alt);
+}
+
+.bp-table thead th.bp-col-id {
+  left: 0;
+}
+
+.bp-table thead th.bp-col-name {
+  left: 132px;
+  min-width: 200px;
+}
+
+.bp-table thead th.bp-col-date {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  /* Prevent the inner flex from breaking the stacking context on WebKit. */
+  will-change: transform;
+}
+
+.bp-table thead th.bp-col-date.is-today {
+  background: var(--primary-subtle);
+  color: var(--primary-active);
+  z-index: 7;
+  /* above other date headers, still below the sticky left cols */
+}
+
+.bp-table thead th.bp-col-total {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--primary-light);
+  color: var(--primary);
+  border-left: 1.5px solid var(--primary-subtle);
+  min-width: 90px;
+}
+
+/* The inner flex is only for horizontal centering — it must NOT create
+   its own stacking context, or the parent sticky loses its paint order. */
+.bp-col-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: center;
+  width: 100%;
+  /* These two lines are the actual fix for the "today column scrolls
+     away while others stay pinned" symptom. */
+  position: static;
+  transform: none;
+}
+
+/* Body */
+.bp-table tbody td {
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--border-light);
+  border-right: 1px solid var(--border-light);
+  text-align: center;
+  color: var(--text-main);
+  vertical-align: middle;
+  background: var(--surface);
+  transition: background 0.12s ease;
+  white-space: nowrap;
+}
+
+.bp-table tbody tr:hover td {
+  background: var(--canvas);
+}
+
+.bp-cell--id {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  text-align: left !important;
+  background: var(--surface);
+  min-width: 132px;
+}
+
+.bp-cell--name {
+  position: sticky;
+  left: 132px;
+  z-index: 4;
+  text-align: left !important;
+  background: var(--surface);
+  min-width: 200px;
+  padding-right: 2.4rem !important;
+  position: sticky;
+}
+
+.bp-table tbody tr:hover .bp-cell--id,
+.bp-table tbody tr:hover .bp-cell--name {
+  background: var(--canvas);
+}
+
+.bp-cell--total {
+  font-family: var(--font-mono);
+  background: var(--primary-light);
+  color: var(--primary-active);
+  font-weight: 700;
+  border-left: 1.5px solid var(--primary-subtle);
+}
+
+.bp-table tbody tr:hover .bp-cell--total {
+  background: var(--primary-subtle);
+}
+
+.bp-cell.is-present {
+  background: var(--present-bg);
+  color: var(--present-hover);
+  font-weight: 700;
+}
+
+.bp-cell.is-absent {
+  background: var(--absent-bg);
+  color: var(--absent-hover);
+  font-weight: 700;
+}
+
+.bp-cell.is-empty {
+  color: var(--text-tertiary);
+}
+
+/* Kebab buttons — hidden until hover/focus */
+.bp-kebab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.bp-kebab:hover {
+  background: var(--canvas-alt);
+  color: var(--text-main);
+}
+
+.bp-kebab:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  opacity: 1;
+}
+
+.bp-table tbody tr:hover .bp-kebab--row,
+.bp-table thead th:hover .bp-kebab--th,
+.bp-kebab:focus {
+  opacity: 1;
+}
+
+.bp-kebab--row {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.bp-table thead th.bp-col-date {
+  position: relative;
+}
+
+/* Floating action menu */
+.bp-menu {
+  position: fixed;
+  z-index: 5000;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 16px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
+  padding: 0.35rem;
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
+  transform-origin: top right;
+  transition: opacity 0.14s ease, transform 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.bp-menu.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.bp-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.bp-menu__item:hover {
+  background: var(--primary-light);
+  color: var(--primary-hover);
+}
+
+.bp-menu__item.is-danger {
+  color: var(--absent);
+}
+
+.bp-menu__item.is-danger:hover {
+  background: var(--absent-bg);
+  color: var(--absent-hover);
+}
+
+.bp-menu__item.is-disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.bp-menu__item.is-disabled:hover {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.bp-menu__divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 0.3rem 0.25rem;
+}
+
+/* Make bp-cell--name a positioning context so kebab sits inside it */
+.bp-cell--name {
+  position: relative;
+}
+
+/* On sticky columns, `position: sticky` already set; combine */
+.bp-cell--name {
+  position: sticky;
+}
+
+/* -----------------------------------------------------
+   RESPONSIVE — smaller devices
+----------------------------------------------------- */
+@media (max-width: 860px) {
+  .bp-table-container {
+    max-height: 62vh;
+  }
+
+  .bp-table {
+    font-size: 0.85rem;
+  }
+
+  .bp-table thead th {
+    padding: 0.6rem 0.6rem;
+    font-size: 0.7rem;
+  }
+
+  .bp-table tbody td {
+    padding: 0.5rem 0.6rem;
+  }
+
+  .bp-table thead th.bp-col-name {
+    left: 108px;
+    min-width: 160px;
+  }
+
+  .bp-cell--name {
+    left: 108px;
+    min-width: 160px;
+  }
+
+  .bp-cell--id {
+    min-width: 108px;
+  }
+
+  .bp-toolbar {
+    padding: 0.7rem 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .bp-toolbar__meta {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .bp-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bp-toolbar__sort {
+    justify-content: space-between;
+  }
+
+  .bp-toolbar__sort select {
+    flex: 1;
+  }
+
+  .bp-table-container {
+    max-height: 58vh;
+  }
+
+  .bp-table {
+    font-size: 0.8rem;
+  }
+
+  .bp-table thead th {
+    padding: 0.5rem 0.5rem;
+  }
+
+  .bp-table tbody td {
+    padding: 0.45rem 0.5rem;
+  }
+
+  .bp-table thead th.bp-col-id,
+  .bp-table thead th.bp-col-name {
+    font-size: 0.68rem;
+  }
+
+  .bp-cell--id {
+    min-width: 96px;
+  }
+
+  .bp-table thead th.bp-col-name,
+  .bp-cell--name {
+    left: 96px;
+    min-width: 140px;
+  }
+
+  .bp-kebab {
+    width: 24px;
+    height: 24px;
+  }
+
+  .bp-menu {
+    min-width: 200px;
+  }
+
+  .bp-menu__item {
+    font-size: 0.85rem;
+    padding: 0.55rem 0.6rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .bp-meta-chip {
+    font-size: 0.72rem;
+    padding: 0.22rem 0.5rem;
+  }
+
+  .bp-table tbody td {
+    padding: 0.4rem 0.45rem;
+  }
+}

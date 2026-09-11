@@ -1,49 +1,73 @@
 /**
  * ATTENDANCE MANAGEMENT SYSTEM — BACKEND (Google Apps Script)
  * ============================================================
- * SECURITY MODEL
- * --------------
- * This web app's /exec URL is public — anyone can call it directly with
- * curl/Postman, bypassing the frontend entirely. So the frontend is NOT
- * where access control lives. Every single request re-verifies:
- *   1. WHO is calling  -> Firebase ID token, verified against Google
- *      (via the Identity Toolkit REST API — no secret needed beyond
- *      your Firebase Web API key, which is a public client key).
- *   2. WHAT they're allowed to do -> looked up fresh from the
- *      Students / Teachers sheets on every call (never trusted from
- *      the client), then every read/write is filtered or rejected
- *      based on that role + scope.
- * The frontend dashboards are just UI convenience. Nothing the client
- * sends (a role name, a class id, a "isAdmin" flag) is ever trusted.
+ * DATA MODEL FOR ATTENDANCE
+ * ---------------------------
+ * Each Subject has its own grid sheet:
  *
- * SHEETS EXPECTED (header row, case-sensitive; column order doesn't matter)
- * ---------------------------------------------------------------------------
- *  Students   : StudentID | Name | Email | ClassID
- *  Teachers   : TeacherID | Name | Email | Role | AssignedClassIDs | AssignedSubjectIDs
- *               - Role is free text ("Teacher" or "CR") — display only, both
- *                 have identical permissions, scoped by the two columns below.
- *               - AssignedClassIDs / AssignedSubjectIDs: comma-separated IDs,
- *                 e.g. "CLS001,CLS002". Fill in whichever makes sense — a CR
- *                 might have one ClassID; a subject teacher might list
- *                 several SubjectIDs across classes.
- *  Classes    : ClassID | ClassName
- *  Subjects   : SubjectID | SubjectName | ClassID
- *  Attendance : AttendanceID | Date | SubjectID | StudentID | Status  (0=Absent, 1=Present)
- *  Settings   : Key | Value
- *               - optional row: AdminEmails | "you@school.com,other@school.com"
- *                 grants full, unscoped access to those emails.
+ *      | Student ID | Name       | 2026-09-04 | 2026-09-09 | Total (of 2)
+ *      | STU001     | Ali Raza   |     1      |     1      |     2
+ *      | STU002     | Sara Khan  |     0      |     1      |     1
+ *
+ * - Date columns are always kept in chronological (sorted) order,
+ *   regardless of the order they were entered in.
+ * - "Total (of N)" is always the LAST column and always reflects each
+ *   student's total presents out of N sessions held so far. It shifts
+ *   right automatically whenever a new date column is inserted.
+ *
+ * ATTENDANCE LOCK RULE
+ * ----------------------
+ *  - TODAY's column can be created and re-saved freely, any number of
+ *    times, all day.
+ *  - Any OTHER date (a "backfill" for a day you missed) can be saved
+ *    exactly ONCE — the first save creates that date's column. The
+ *    instant it exists, that date is permanently locked, even if you
+ *    try to save it again seconds later. Future dates are rejected.
+ *  - Once today's date rolls over (becomes yesterday), its column is
+ *    locked the same way — nothing is special-cased about "the day it
+ *    was created", only whether the date equals the server's current
+ *    date right now.
+ *
+ * SUBJECT LIFECYCLE
+ * ------------------
+ * A subject is only "live" if its grid sheet tab exists on the
+ * spreadsheet. Deleting the tab is the effective way to remove a subject
+ * from the app — it disappears from every dropdown and every read.
+ * Only addSubject() is allowed to CREATE a grid sheet.
+ *
+ * PERMISSION MODEL
+ * -----------------
+ * Two roles only:
+ *  - "student" : read-only, sees only their own attendance.
+ *  - "staff"   : any row in the Teachers sheet (Role = "Teacher" or "CR" —
+ *                cosmetic label, identical permissions). Full access to
+ *                every class, subject, student and attendance record.
+ *
+ * SECURITY MODEL
+ * ---------------
+ * This web app's /exec URL is public. Every request re-verifies:
+ *   1. WHO is calling  -> Firebase ID token, verified against Google via
+ *      the Identity Toolkit REST API.
+ *   2. WHAT they're allowed to do -> re-derived from the Students/Teachers
+ *      sheets on every call, never trusted from the client.
+ *
+ * SHEETS EXPECTED (header text can have spaces or not — normalized either way)
+ * -----------------------------------------------------------------------------
+ *  Students   : Student ID | Name | Email | Class ID | Status
+ *  Teachers   : Teacher ID | Name | Email | Role
+ *  Classes    : Class ID | Class Name | Academic Year
+ *  Subjects   : Subject ID | Subject Name | Teacher ID | Class ID
+ *  Attendance : (legacy — no longer written to; see migrateOldAttendance())
+ *  Settings   : Setting | Value   (optional row: AdminEmails -> comma list)
  *
  * SETUP
  * -----
- *  1. Open your Sheet -> Extensions -> Apps Script -> replace contents with this file.
- *  2. Project Settings (gear icon) -> Script Properties -> Add property:
- *       FIREBASE_API_KEY = <your Firebase Web API key, from firebaseConfig.apiKey>
- *  3. Deploy -> New deployment -> type: Web app
- *       Execute as: Me
- *       Who has access: Anyone
- *  4. Copy the /exec URL into the frontend's js/api.js (APPS_SCRIPT_URL).
- *  5. Add Email columns to your Students/Teachers sheets matching each
- *     person's Firebase login email exactly (case doesn't matter).
+ *  1. Extensions -> Apps Script -> paste this file as Code.gs
+ *  2. Project Settings -> Script Properties -> FIREBASE_API_KEY = <your Firebase Web API key>
+ *  3. Run "authorizeExternalRequests" once from the editor and grant the
+ *     permission prompt.
+ *  4. Deploy -> New deployment -> Web app -> Execute as: Me, Access: Anyone
+ *  5. Copy the /exec URL into the frontend's js/api.js
  */
 
 // =====================================================
@@ -57,9 +81,19 @@ const SHEETS = {
   TEACHERS: 'Teachers',
   SUBJECTS: 'Subjects',
   CLASSES: 'Classes',
-  ATTENDANCE: 'Attendance',
+  ATTENDANCE: 'Attendance', // legacy flat log — kept for migration only
   SETTINGS: 'Settings'
 };
+
+// Cell background colors for attendance marks (mirrors the CSS palette).
+const ATTENDANCE_COLORS = {
+  PRESENT: '#d9ead3', // light green
+  ABSENT:  '#f4cccc'  // light red
+};
+
+function authorizeExternalRequests() {
+  UrlFetchApp.fetch('https://www.google.com');
+}
 
 // =====================================================
 // ERRORS
@@ -86,6 +120,9 @@ function doGet(e) {
       case 'me':
         data = buildMePayload(actor);
         break;
+      case 'bootstrap':
+        data = buildBootstrapPayload(actor);
+        break;
       case 'classes':
         data = listClasses(actor);
         break;
@@ -95,8 +132,14 @@ function doGet(e) {
       case 'students':
         data = listStudents(actor, params);
         break;
+      case 'teachers':
+        data = listTeachers(actor);
+        break;
       case 'attendance':
         data = listAttendance(actor, params);
+        break;
+      case 'subjectSheet':
+        data = getSubjectSheet(actor, params);
         break;
       default:
         throw AppError('Unknown action "' + action + '".', 'BAD_REQUEST');
@@ -120,7 +163,7 @@ function doPost(e) {
     const actor = authenticate(body.idToken);
     const action = body.action;
 
-    lock.waitLock(10000);
+    lock.waitLock(15000);
 
     let result;
     switch (action) {
@@ -129,6 +172,27 @@ function doPost(e) {
         break;
       case 'deleteAttendance':
         result = deleteAttendance(actor, body);
+        break;
+      case 'addClass':
+        result = addClass(actor, body);
+        break;
+      case 'addSubject':
+        result = addSubject(actor, body);
+        break;
+      case 'addStudent':
+        result = addStudent(actor, body);
+        break;
+      case 'deleteSubjectSheetRow':
+        result = deleteSubjectSheetRow(actor, body);
+        break;
+      case 'deleteSubjectSheetColumn':
+        result = deleteSubjectSheetColumn(actor, body);
+        break;
+      case 'renameSubjectSheetRow':
+        result = renameSubjectSheetRow(actor, body);
+        break;
+      case 'purgeMissingSubjects':
+        result = purgeMissingSubjects(actor);
         break;
       default:
         throw AppError('Unknown action "' + action + '".', 'BAD_REQUEST');
@@ -144,11 +208,41 @@ function doPost(e) {
 }
 
 // =====================================================
-// AUTH — verify the Firebase ID token, then resolve role
+// AUTH
 // =====================================================
 
 function authenticate(idToken) {
   if (!idToken) throw AppError('You must be signed in.', 'AUTH_REQUIRED');
+
+  const verified = verifyIdTokenCached(idToken);
+  const actor = resolveActor(verified.email);
+
+  if (!actor) {
+    throw AppError(
+      'This email is not registered. Ask an admin to add it to the Students or Teachers sheet.',
+      'NOT_REGISTERED'
+    );
+  }
+
+  actor.email = verified.email;
+  actor.uid = verified.uid;
+  return actor;
+}
+
+// Verifying a Firebase ID token means an outbound network call to Google
+// on every single request — one of the biggest fixed costs per call.
+// Since the same token stays valid for up to an hour, cache a successful
+// verification for a while so repeat calls in one session skip that
+// round-trip entirely. Keyed by a hash of the token, never the token
+// itself, so nothing sensitive sits in the cache.
+function verifyIdTokenCached(idToken) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'tok_' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken)
+  ).slice(0, 40);
+
+  const cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
 
   const apiKey = PropertiesService.getScriptProperties().getProperty('FIREBASE_API_KEY');
   if (!apiKey) throw AppError('Server is missing FIREBASE_API_KEY. Set it in Script Properties.', 'SERVER_ERROR');
@@ -171,19 +265,9 @@ function authenticate(idToken) {
     throw AppError('Your session has expired. Please sign in again.', 'AUTH_INVALID');
   }
 
-  const email = user.email.trim().toLowerCase();
-  const actor = resolveActor(email);
-
-  if (!actor) {
-    throw AppError(
-      'This email is not registered. Ask an admin to add it to the Students or Teachers sheet.',
-      'NOT_REGISTERED'
-    );
-  }
-
-  actor.email = email;
-  actor.uid = user.localId;
-  return actor;
+  const result = { email: user.email.trim().toLowerCase(), uid: user.localId };
+  cache.put(cacheKey, JSON.stringify(result), 1500); // 25 minutes, safely under token expiry
+  return result;
 }
 
 function resolveActor(email) {
@@ -203,9 +287,7 @@ function resolveActor(email) {
       roleLabel: isAdmin ? 'Admin' : roleLabel,
       isAdmin: isAdmin,
       teacherId: teacherRow.TeacherID,
-      name: teacherRow.Name,
-      classIds: splitIds(teacherRow.AssignedClassIDs),
-      subjectIds: splitIds(teacherRow.AssignedSubjectIDs)
+      name: teacherRow.Name
     };
   }
 
@@ -226,7 +308,7 @@ function resolveActor(email) {
   }
 
   if (isAdmin) {
-    return { role: 'staff', roleLabel: 'Admin', isAdmin: true, classIds: [], subjectIds: [] };
+    return { role: 'staff', roleLabel: 'Admin', isAdmin: true };
   }
 
   return null;
@@ -243,18 +325,33 @@ function splitIds(value) {
 // SHEET HELPERS
 // =====================================================
 
+// Memoized per execution: without this, every single getSheetData() /
+// getSheet() call re-opens the whole spreadsheet by ID from scratch —
+// and a single request (e.g. bootstrap) calls those many times. This
+// alone removes most of the redundant work within one request.
+let _cachedSpreadsheet = null;
+function getSpreadsheet() {
+  if (!_cachedSpreadsheet) {
+    _cachedSpreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+  return _cachedSpreadsheet;
+}
+
 function getSheet(sheetName) {
-  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = spreadsheet.getSheetByName(sheetName);
+  const sheet = getSpreadsheet().getSheetByName(sheetName);
   if (!sheet) throw AppError('Sheet "' + sheetName + '" not found.', 'SERVER_ERROR');
   return sheet;
+}
+
+function normalizeHeader(h) {
+  return String(h || '').replace(/[^a-zA-Z0-9]/g, '');
 }
 
 function getSheetData(sheetName) {
   const sheet = getSheet(sheetName);
   const data = sheet.getDataRange().getValues();
   if (data.length === 0) return [];
-  const headers = data[0];
+  const headers = data[0].map(normalizeHeader);
   return data.slice(1)
     .filter(function (row) { return row.join('') !== ''; })
     .map(function (row) {
@@ -264,21 +361,46 @@ function getSheetData(sheetName) {
     });
 }
 
-// Like getSheetData, but keeps each row's real (1-based) sheet row number
-// so write operations can target a specific row.
-function getSheetRows(sheetName) {
+function appendRowByHeaders(sheetName, valuesObj) {
   const sheet = getSheet(sheetName);
-  const data = sheet.getDataRange().getValues();
-  if (data.length === 0) return { sheet: sheet, headers: [], rows: [] };
-  const headers = data[0];
-  const rows = data.slice(1)
-    .map(function (row, i) {
-      const obj = {};
-      headers.forEach(function (h, colIndex) { obj[h] = row[colIndex]; });
-      return { rowNumber: i + 2, values: obj };
-    })
-    .filter(function (r) { return Object.values(r.values).join('') !== ''; });
-  return { sheet: sheet, headers: headers, rows: rows };
+  const realHeaders = sheet.getDataRange().getValues()[0] || [];
+  if (!realHeaders.length) throw AppError('Sheet "' + sheetName + '" has no header row.', 'SERVER_ERROR');
+  const row = realHeaders.map(function (h) {
+    const key = normalizeHeader(h);
+    return valuesObj.hasOwnProperty(key) ? valuesObj[key] : '';
+  });
+  sheet.appendRow(row);
+  return row;
+}
+
+function generateSequentialId(sheetName, normalizedIdKey, prefix, padLength) {
+  const rows = getSheetData(sheetName);
+  let max = 0;
+  rows.forEach(function (r) {
+    const match = String(r[normalizedIdKey] || '').match(/(\d+)\s*$/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > max) max = num;
+    }
+  });
+  return prefix + String(max + 1).padStart(padLength, '0');
+}
+
+function assertEmailNotTaken(email) {
+  const students = getSheetData(SHEETS.STUDENTS);
+  const teachers = getSheetData(SHEETS.TEACHERS);
+  const taken =
+    students.some(function (s) { return String(s.Email || '').trim().toLowerCase() === email; }) ||
+    teachers.some(function (t) { return String(t.Email || '').trim().toLowerCase() === email; });
+  if (taken) throw AppError('That email is already registered to someone else.', 'VALIDATION_ERROR');
+}
+
+function assertSeatNumberNotTaken(seatNumber) {
+  const students = getSheetData(SHEETS.STUDENTS);
+  const taken = students.some(function (s) {
+    return String(s.StudentID || '').trim().toLowerCase() === seatNumber.toLowerCase();
+  });
+  if (taken) throw AppError('That seat number is already registered.', 'VALIDATION_ERROR');
 }
 
 function getSettingsMap() {
@@ -290,7 +412,8 @@ function getSettingsMap() {
   }
   const map = {};
   rows.forEach(function (r) {
-    if (r.Key) map[String(r.Key).trim()] = r.Value;
+    const key = r.Setting || r.Key;
+    if (key) map[String(key).trim()] = r.Value;
   });
   return map;
 }
@@ -302,65 +425,191 @@ function formatDate(value) {
   return String(value || '').trim();
 }
 
+function todayString() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
 // =====================================================
-// SCOPE HELPERS (who is this staff member allowed to touch)
+// VALIDATION HELPERS
 // =====================================================
 
-function getSubjectIdsInScope(actor) {
-  if (actor.isAdmin) return null; // unrestricted
-  const subjects = getSheetData(SHEETS.SUBJECTS);
-  const bySubject = actor.subjectIds.slice();
-  const byClass = subjects
-    .filter(function (s) { return actor.classIds.indexOf(String(s.ClassID)) !== -1; })
-    .map(function (s) { return String(s.SubjectID); });
-  return bySubject.concat(byClass);
-}
-
-function getStudentIdsInScope(actor) {
-  if (actor.isAdmin) return null;
-  if (!actor.classIds.length) return [];
-  const students = getSheetData(SHEETS.STUDENTS);
-  return students
-    .filter(function (s) { return actor.classIds.indexOf(String(s.ClassID)) !== -1; })
-    .map(function (s) { return String(s.StudentID); });
-}
-
-function assertClassInScope(actor, classId) {
-  if (actor.isAdmin || !classId) return;
-  if (actor.classIds.indexOf(String(classId)) === -1) {
-    throw AppError('You are not assigned to this class.', 'FORBIDDEN');
-  }
-}
-
-function assertSubjectInScope(actor, subjectId) {
+function assertSubjectExists(subjectId) {
   const subjects = getSheetData(SHEETS.SUBJECTS);
   const subject = subjects.find(function (s) { return String(s.SubjectID) === String(subjectId); });
   if (!subject) throw AppError('Unknown subject "' + subjectId + '".', 'BAD_REQUEST');
-  if (actor.isAdmin) return subject;
-
-  const okBySubject = actor.subjectIds.indexOf(String(subjectId)) !== -1;
-  const okByClass = actor.classIds.indexOf(String(subject.ClassID)) !== -1;
-  if (!okBySubject && !okByClass) {
-    throw AppError('You are not assigned to this subject.', 'FORBIDDEN');
-  }
   return subject;
 }
 
-function assertStudentInScope(actor, studentId, expectedClassId) {
+function assertStudentExists(studentId, expectedClassId) {
   const students = getSheetData(SHEETS.STUDENTS);
   const student = students.find(function (s) { return String(s.StudentID) === String(studentId); });
   if (!student) throw AppError('Unknown student "' + studentId + '".', 'BAD_REQUEST');
-
   if (expectedClassId && String(student.ClassID) !== String(expectedClassId)) {
     throw AppError('Student "' + studentId + '" is not in that class.', 'BAD_REQUEST');
   }
-  if (!actor.isAdmin) {
-    const okByClass = actor.classIds.indexOf(String(student.ClassID)) !== -1;
-    if (!okByClass) {
-      throw AppError('You are not assigned to this student\'s class.', 'FORBIDDEN');
+  return student;
+}
+
+// =====================================================
+// SUBJECT SHEETS — one grid sheet per subject (students × dates)
+// =====================================================
+
+function subjectSheetSuffix(subjectId) {
+  return '(' + subjectId + ')';
+}
+
+function sanitizeSheetName(name) {
+  return String(name).replace(/[\[\]\*\?\/\\:]/g, '').trim().slice(0, 95);
+}
+
+function findSubjectSheet(subject) {
+  const suffix = subjectSheetSuffix(subject.SubjectID);
+  return getSpreadsheet().getSheets().find(function (s) { return s.getName().indexOf(suffix) !== -1; }) || null;
+}
+
+// A subject is only "live" if its grid sheet exists on the spreadsheet.
+// Deleting the tab is the effective way to remove a subject from the app.
+function subjectHasSheet(subject) {
+  return !!findSubjectSheet(subject);
+}
+
+// Finds the column index (0-based) of the running Total column, or -1.
+// Matches any header starting with "total" so "Total (of 12)" still counts.
+function findTotalColumnIndex(header) {
+  for (let i = 0; i < header.length; i++) {
+    if (String(header[i]).trim().toLowerCase().indexOf('total') === 0) return i;
+  }
+  return -1;
+}
+
+// Finds the column (0-based) for a given date, tolerant of the cell being
+// stored as text or as an actual Date. Never looks past the Total column.
+function findDateColumnIndex(headerRow, date, totalColIdx) {
+  const end = (typeof totalColIdx === 'number' && totalColIdx !== -1) ? totalColIdx : headerRow.length;
+  for (let i = 2; i < end; i++) {
+    if (formatDate(headerRow[i]) === date) return i;
+  }
+  return -1;
+}
+
+function findStudentRowNumber(grid, studentId) {
+  for (let r = 1; r < grid.length; r++) {
+    if (String(grid[r][0]) === String(studentId)) return r + 1; // 1-based sheet row
+  }
+  return -1;
+}
+
+// Applies a light green (present=1) or light red (absent=0) background to
+// a single attendance cell. Any other value clears the background.
+function applyCellColor(sheet, rowNumber, colIndex0, status) {
+  const cell = sheet.getRange(rowNumber, colIndex0 + 1);
+  if (Number(status) === 1) {
+    cell.setBackground(ATTENDANCE_COLORS.PRESENT);
+  } else if (Number(status) === 0) {
+    cell.setBackground(ATTENDANCE_COLORS.ABSENT);
+  } else {
+    cell.setBackground(null);
+  }
+}
+
+// Ensures a "Total (of N)" column exists as the very LAST column. Returns
+// its 0-based index. Safe to call repeatedly.
+function ensureTotalColumn(sheet) {
+  const header = sheet.getDataRange().getValues()[0] || [];
+  let totalColIdx = findTotalColumnIndex(header);
+  if (totalColIdx !== -1) return totalColIdx;
+
+  const newColIdx = header.length; // append at the very end
+  sheet.getRange(1, newColIdx + 1).setValue('Total (of 0)');
+  return newColIdx;
+}
+
+// Recalculates the Total column's header ("Total (of N)") and every
+// student's present-count. Call this after any structural change.
+function recomputeTotalsColumn(sheet) {
+  let totalColIdx = findTotalColumnIndex(sheet.getDataRange().getValues()[0] || []);
+  if (totalColIdx === -1) totalColIdx = ensureTotalColumn(sheet);
+
+  const grid = sheet.getDataRange().getValues();
+  const dateColCount = totalColIdx - 2; // columns 2..totalColIdx-1 are dates
+  sheet.getRange(1, totalColIdx + 1).setValue('Total (of ' + Math.max(dateColCount, 0) + ')');
+
+  if (grid.length <= 1) return;
+
+  const totals = [];
+  for (let r = 1; r < grid.length; r++) {
+    let presentCount = 0;
+    for (let c = 2; c < totalColIdx; c++) {
+      if (Number(grid[r][c]) === 1) presentCount++;
+    }
+    totals.push([presentCount]);
+  }
+  sheet.getRange(2, totalColIdx + 1, totals.length, 1).setValues(totals);
+}
+
+// Creates the subject's grid sheet (Student ID | Name | Total (of 0)),
+// seeded with every current student of that class, if it doesn't exist yet.
+function getOrCreateSubjectSheet(subject) {
+  let sheet = findSubjectSheet(subject);
+  if (sheet) return sheet;
+
+  const name = sanitizeSheetName(subject.SubjectName + ' ' + subjectSheetSuffix(subject.SubjectID));
+  sheet = getSpreadsheet().insertSheet(name);
+  sheet.getRange(1, 1, 1, 3).setValues([['Student ID', 'Name', 'Total (of 0)']]);
+  sheet.setFrozenRows(1);
+  sheet.setFrozenColumns(2);
+  sheet.getRange('A:A').setNumberFormat('@'); // keep Student IDs as plain text
+
+  const students = getSheetData(SHEETS.STUDENTS).filter(function (s) {
+    return String(s.ClassID) === String(subject.ClassID);
+  });
+  if (students.length) {
+    const rows = students.map(function (s) { return [s.StudentID, s.Name, 0]; });
+    sheet.getRange(2, 1, rows.length, 3).setValues(rows);
+  }
+  return sheet;
+}
+
+// Adds a student as a new row to every subject sheet their class already
+// has, then recalculates that sheet's Total column.
+function syncStudentAcrossSubjectSheets(studentId, name, classId) {
+  const subjects = getSheetData(SHEETS.SUBJECTS).filter(function (s) { return String(s.ClassID) === String(classId); });
+  subjects.forEach(function (subject) {
+    const sheet = getOrCreateSubjectSheet(subject);
+    const ids = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 0), 1).getValues().map(function (r) { return String(r[0]); });
+    if (ids.indexOf(String(studentId)) === -1) {
+      sheet.appendRow([studentId, name]);
+      recomputeTotalsColumn(sheet);
+    }
+  });
+}
+
+// Inserts a brand-new date column in the correct chronological position
+// (always before the Total column, and before any later date already
+// present), then re-adds a Total column at the end if one didn't exist
+// yet. Returns the new column's 0-based index.
+function insertDateColumn(sheet, date) {
+  const header = sheet.getDataRange().getValues()[0] || [];
+  const totalColIdx = findTotalColumnIndex(header);
+  const dateColEnd = totalColIdx === -1 ? header.length : totalColIdx;
+
+  let insertBeforeIdx = dateColEnd; // default: right before Total (or at the end)
+  for (let i = 2; i < dateColEnd; i++) {
+    const colDate = formatDate(header[i]);
+    if (colDate && colDate > date) {
+      insertBeforeIdx = i;
+      break;
     }
   }
-  return student;
+
+  sheet.insertColumnBefore(insertBeforeIdx + 1); // 1-based position
+  const cell = sheet.getRange(1, insertBeforeIdx + 1);
+  cell.setNumberFormat('@'); // plain text, so it never silently reformats
+  cell.setValue(date);
+
+  if (totalColIdx === -1) ensureTotalColumn(sheet);
+
+  return insertBeforeIdx;
 }
 
 // =====================================================
@@ -372,7 +621,8 @@ function buildMePayload(actor) {
     email: actor.email,
     role: actor.role,
     roleLabel: actor.roleLabel,
-    name: actor.name || ''
+    name: actor.name || '',
+    today: todayString()
   };
   if (actor.role === 'student') {
     payload.studentId = actor.studentId;
@@ -380,29 +630,41 @@ function buildMePayload(actor) {
   } else {
     payload.teacherId = actor.teacherId;
     payload.isAdmin = actor.isAdmin;
-    payload.classIds = actor.classIds;
-    payload.subjectIds = actor.subjectIds;
   }
+  return payload;
+}
+
+// Everything the app needs to boot a dashboard, in ONE round-trip:
+// identity, plus every class/subject/student/teacher unfiltered. The
+// frontend caches this and filters client-side from then on (by class,
+// by search, etc.) — no further network calls needed for any of that.
+//
+// IMPORTANT: subjects whose grid sheet has been deleted are omitted here,
+// so a deleted tab disappears from every dropdown immediately.
+function buildBootstrapPayload(actor) {
+  const payload = { me: buildMePayload(actor) };
+
+  if (actor.role === 'student') {
+    payload.classes = listClasses(actor);
+    payload.subjects = listSubjects(actor, {});
+    return payload;
+  }
+
+  payload.classes = getSheetData(SHEETS.CLASSES);
+  payload.subjects = getSheetData(SHEETS.SUBJECTS).filter(subjectHasSheet);
+  payload.students = getSheetData(SHEETS.STUDENTS);
+  payload.teachers = getSheetData(SHEETS.TEACHERS).map(function (t) {
+    return { TeacherID: t.TeacherID, Name: t.Name, Role: t.Role };
+  });
   return payload;
 }
 
 function listClasses(actor) {
   const classes = getSheetData(SHEETS.CLASSES);
-
   if (actor.role === 'student') {
     return classes.filter(function (c) { return String(c.ClassID) === String(actor.classId); });
   }
-
-  if (actor.role === 'staff' && !actor.isAdmin) {
-    const subjects = getSheetData(SHEETS.SUBJECTS);
-    const classIdsFromSubjects = subjects
-      .filter(function (s) { return actor.subjectIds.indexOf(String(s.SubjectID)) !== -1; })
-      .map(function (s) { return String(s.ClassID); });
-    const allowed = actor.classIds.concat(classIdsFromSubjects);
-    return classes.filter(function (c) { return allowed.indexOf(String(c.ClassID)) !== -1; });
-  }
-
-  return classes; // admin
+  return classes;
 }
 
 function listSubjects(actor, params) {
@@ -411,16 +673,13 @@ function listSubjects(actor, params) {
   if (params.classId) {
     subjects = subjects.filter(function (s) { return String(s.ClassID) === String(params.classId); });
   }
-
   if (actor.role === 'student') {
     subjects = subjects.filter(function (s) { return String(s.ClassID) === String(actor.classId); });
-  } else if (actor.role === 'staff' && !actor.isAdmin) {
-    subjects = subjects.filter(function (s) {
-      const inSubjectScope = actor.subjectIds.indexOf(String(s.SubjectID)) !== -1;
-      const inClassScope = actor.classIds.indexOf(String(s.ClassID)) !== -1;
-      return inSubjectScope || inClassScope;
-    });
   }
+
+  // Only return subjects whose grid sheet still exists — deleting the tab
+  // is how a subject is removed from the app.
+  subjects = subjects.filter(subjectHasSheet);
 
   return subjects;
 }
@@ -429,52 +688,78 @@ function listStudents(actor, params) {
   if (actor.role === 'student') {
     throw AppError('Students cannot list other students.', 'FORBIDDEN');
   }
-
   let students = getSheetData(SHEETS.STUDENTS);
-
   if (params.classId) {
-    assertClassInScope(actor, params.classId);
     students = students.filter(function (s) { return String(s.ClassID) === String(params.classId); });
-  } else if (!actor.isAdmin) {
-    if (!actor.classIds.length) {
-      throw AppError('Provide a classId to list students.', 'BAD_REQUEST');
-    }
-    students = students.filter(function (s) { return actor.classIds.indexOf(String(s.ClassID)) !== -1; });
   }
-
   return students;
 }
 
+function listTeachers(actor) {
+  if (actor.role === 'student') {
+    throw AppError('Students cannot list teachers.', 'FORBIDDEN');
+  }
+  return getSheetData(SHEETS.TEACHERS).map(function (t) {
+    return { TeacherID: t.TeacherID, Name: t.Name, Role: t.Role };
+  });
+}
+
+// Reads every marked cell out of one subject's grid sheet, as flat records.
+// Skips the Total column entirely.
+function readSubjectSheetRecords(subject) {
+  const sheet = findSubjectSheet(subject);
+  if (!sheet) return []; // no attendance ever marked for this subject yet
+
+  const grid = sheet.getDataRange().getValues();
+  if (grid.length < 2) return [];
+  const header = grid[0];
+  const totalColIdx = findTotalColumnIndex(header);
+  const dateColEnd = totalColIdx === -1 ? header.length : totalColIdx;
+  const records = [];
+
+  for (let col = 2; col < dateColEnd; col++) {
+    const date = formatDate(header[col]);
+    if (!date) continue;
+    for (let r = 1; r < grid.length; r++) {
+      const studentId = grid[r][0];
+      if (!studentId) continue;
+      const cell = grid[r][col];
+      if (cell === '' || cell === null || cell === undefined) continue; // not marked
+      records.push({
+        AttendanceID: subject.SubjectID + '_' + studentId + '_' + date,
+        Date: date,
+        SubjectID: subject.SubjectID,
+        StudentID: String(studentId),
+        Status: Number(cell)
+      });
+    }
+  }
+  return records;
+}
+
 function listAttendance(actor, params) {
-  let rows = getSheetData(SHEETS.ATTENDANCE).map(function (r) {
-    return {
-      AttendanceID: r.AttendanceID,
-      Date: formatDate(r.Date),
-      SubjectID: r.SubjectID,
-      StudentID: r.StudentID,
-      Status: Number(r.Status)
-    };
+  let subjects = getSheetData(SHEETS.SUBJECTS);
+
+  if (params.subjectId) {
+    subjects = subjects.filter(function (s) { return String(s.SubjectID) === String(params.subjectId); });
+  }
+  if (params.classId) {
+    subjects = subjects.filter(function (s) { return String(s.ClassID) === String(params.classId); });
+  }
+  if (actor.role === 'student') {
+    subjects = subjects.filter(function (s) { return String(s.ClassID) === String(actor.classId); });
+  }
+
+  // Skip any subject whose sheet has been deleted.
+  subjects = subjects.filter(subjectHasSheet);
+
+  let rows = [];
+  subjects.forEach(function (subject) {
+    rows = rows.concat(readSubjectSheetRecords(subject));
   });
 
   if (actor.role === 'student') {
     rows = rows.filter(function (r) { return String(r.StudentID) === String(actor.studentId); });
-  } else if (!actor.isAdmin) {
-    const scopedStudentIds = getStudentIdsInScope(actor);
-    const scopedSubjectIds = getSubjectIdsInScope(actor);
-    rows = rows.filter(function (r) {
-      return scopedStudentIds.indexOf(String(r.StudentID)) !== -1 ||
-             scopedSubjectIds.indexOf(String(r.SubjectID)) !== -1;
-    });
-  }
-
-  if (params.subjectId) {
-    rows = rows.filter(function (r) { return String(r.SubjectID) === String(params.subjectId); });
-  }
-  if (params.classId) {
-    const idsInClass = getSheetData(SHEETS.STUDENTS)
-      .filter(function (s) { return String(s.ClassID) === String(params.classId); })
-      .map(function (s) { return String(s.StudentID); });
-    rows = rows.filter(function (r) { return idsInClass.indexOf(String(r.StudentID)) !== -1; });
   }
   if (params.date) {
     rows = rows.filter(function (r) { return r.Date === params.date; });
@@ -484,7 +769,299 @@ function listAttendance(actor, params) {
 }
 
 // =====================================================
-// WRITE HANDLERS
+// BLUEPRINT VIEW — read + row/column mutations on a subject's grid sheet
+// =====================================================
+
+// Returns the ENTIRE subject grid as a structured object the frontend can
+// render directly: header row, per-student row, per-date columns, and the
+// running total column. This is a "blueprint" of the actual Google Sheet.
+function getSubjectSheet(actor, params) {
+  const subjectId = String(params.subjectId || '').trim();
+  if (!subjectId) throw AppError('subjectId is required.', 'BAD_REQUEST');
+
+  const subject = assertSubjectExists(subjectId);
+  if (actor.role === 'student' && String(subject.ClassID) !== String(actor.classId)) {
+    throw AppError('You can only view your own class.', 'FORBIDDEN');
+  }
+
+  const sheet = findSubjectSheet(subject);
+  if (!sheet) {
+    throw AppError(
+      'This subject no longer exists. It may have been deleted. Refresh the page and pick another subject.',
+      'NOT_FOUND'
+    );
+  }
+
+  const grid = sheet.getDataRange().getValues();
+  if (grid.length === 0) {
+    return {
+      subjectId: subject.SubjectID,
+      subjectName: subject.SubjectName,
+      classId: subject.ClassID,
+      headers: [],
+      dates: [],
+      totalHeader: 'Total (of 0)',
+      rows: [],
+      today: todayString()
+    };
+  }
+
+  const header = grid[0];
+  const totalColIdx = findTotalColumnIndex(header);
+  const dateColEnd = totalColIdx === -1 ? header.length : totalColIdx;
+
+  // Dates (sorted left→right as stored).
+  const dates = [];
+  for (let c = 2; c < dateColEnd; c++) {
+    const d = formatDate(header[c]);
+    if (d) dates.push({ colIndex: c, date: d });
+  }
+
+  // Rows — skip empty ones. Students only see their own row.
+  const rows = [];
+  for (let r = 1; r < grid.length; r++) {
+    const studentId = String(grid[r][0] || '').trim();
+    const name = String(grid[r][1] || '').trim();
+    if (!studentId && !name) continue;
+
+    if (actor.role === 'student') {
+      const matchesId = String(studentId) === String(actor.studentId);
+      const matchesName = name && actor.name && name.toLowerCase() === String(actor.name).toLowerCase();
+      if (!matchesId && !matchesName) continue;
+    }
+
+    const marks = {};
+    for (let c = 2; c < dateColEnd; c++) {
+      const d = formatDate(header[c]);
+      if (!d) continue;
+      const v = grid[r][c];
+      marks[d] = (v === '' || v === null || v === undefined) ? null : Number(v);
+    }
+
+    const total = totalColIdx !== -1 ? Number(grid[r][totalColIdx]) || 0 : 0;
+
+    rows.push({
+      sheetRowNumber: r + 1, // 1-based
+      studentId: studentId,
+      name: name,
+      marks: marks,
+      total: total
+    });
+  }
+
+  return {
+    subjectId: subject.SubjectID,
+    subjectName: subject.SubjectName,
+    classId: subject.ClassID,
+    headers: header.map(String),
+    dates: dates,
+    totalColIdx: totalColIdx,
+    totalHeader: totalColIdx !== -1 ? String(header[totalColIdx]) : 'Total (of 0)',
+    rows: rows,
+    today: todayString()
+  };
+}
+
+// Deletes a single student's row from THIS subject sheet only. The
+// Students master sheet is never touched.
+function deleteSubjectSheetRow(actor, body) {
+  if (actor.role !== 'staff') throw AppError('Only teachers/CRs can modify the sheet.', 'FORBIDDEN');
+
+  const subjectId = String(body.subjectId || '').trim();
+  const rowNumber = Number(body.rowNumber);
+  if (!subjectId) throw AppError('subjectId is required.', 'VALIDATION_ERROR');
+  if (!rowNumber || rowNumber < 2) throw AppError('Invalid row.', 'BAD_REQUEST');
+
+  const subject = assertSubjectExists(subjectId);
+  const sheet = findSubjectSheet(subject);
+  if (!sheet) throw AppError('This subject no longer exists.', 'NOT_FOUND');
+
+  const lastRow = sheet.getLastRow();
+  if (rowNumber > lastRow) throw AppError('Row no longer exists.', 'NOT_FOUND');
+  if (rowNumber === 1) throw AppError('Cannot delete the header row.', 'FORBIDDEN');
+
+  sheet.deleteRow(rowNumber);
+  recomputeTotalsColumn(sheet);
+  return { deleted: true, subjectId: subjectId, rowNumber: rowNumber };
+}
+
+// Deletes a whole date column (a session) from THIS subject sheet only.
+// Refuses if it's today — today is freely editable, but structural
+// deletion is not allowed for the live session.
+function deleteSubjectSheetColumn(actor, body) {
+  if (actor.role !== 'staff') throw AppError('Only teachers/CRs can modify the sheet.', 'FORBIDDEN');
+
+  const subjectId = String(body.subjectId || '').trim();
+  const date = String(body.date || '').trim();
+  if (!subjectId) throw AppError('subjectId is required.', 'VALIDATION_ERROR');
+  if (!date) throw AppError('date is required.', 'VALIDATION_ERROR');
+
+  const today = todayString();
+  if (date === today) {
+    throw AppError('Today\'s column cannot be deleted. Clear individual marks instead.', 'FORBIDDEN');
+  }
+
+  const subject = assertSubjectExists(subjectId);
+  const sheet = findSubjectSheet(subject);
+  if (!sheet) throw AppError('This subject no longer exists.', 'NOT_FOUND');
+
+  const header = sheet.getDataRange().getValues()[0] || [];
+  const totalColIdx = findTotalColumnIndex(header);
+  const colIdx = findDateColumnIndex(header, date, totalColIdx);
+  if (colIdx === -1) throw AppError('That date column no longer exists.', 'NOT_FOUND');
+
+  sheet.deleteColumn(colIdx + 1); // 1-based
+  recomputeTotalsColumn(sheet);
+  return { deleted: true, subjectId: subjectId, date: date };
+}
+
+// Renames a student row (both the ID and Name cells) in THIS subject
+// sheet only. The Students master sheet is never touched.
+function renameSubjectSheetRow(actor, body) {
+  if (actor.role !== 'staff') throw AppError('Only teachers/CRs can modify the sheet.', 'FORBIDDEN');
+
+  const subjectId = String(body.subjectId || '').trim();
+  const rowNumber = Number(body.rowNumber);
+  const newId = String(body.newId || '').trim();
+  const newName = String(body.newName || '').trim();
+
+  if (!subjectId) throw AppError('subjectId is required.', 'VALIDATION_ERROR');
+  if (!rowNumber || rowNumber < 2) throw AppError('Invalid row.', 'BAD_REQUEST');
+  if (!newId && !newName) throw AppError('Nothing to rename.', 'VALIDATION_ERROR');
+
+  const subject = assertSubjectExists(subjectId);
+  const sheet = findSubjectSheet(subject);
+  if (!sheet) throw AppError('This subject no longer exists.', 'NOT_FOUND');
+  if (rowNumber > sheet.getLastRow()) throw AppError('Row no longer exists.', 'NOT_FOUND');
+
+  if (newId) {
+    sheet.getRange(rowNumber, 1).setNumberFormat('@').setValue(newId);
+  }
+  if (newName) {
+    sheet.getRange(rowNumber, 2).setValue(newName);
+  }
+  return { renamed: true, subjectId: subjectId, rowNumber: rowNumber };
+}
+
+// Removes rows from the Subjects master sheet whose grid sheet has been
+// deleted. Frees the subject ID so it can be reused by addSubject later.
+// Safe to run repeatedly.
+function purgeMissingSubjects(actor) {
+  if (actor.role !== 'staff') throw AppError('Only teachers/CRs can do this.', 'FORBIDDEN');
+
+  const sheet = getSheet(SHEETS.SUBJECTS);
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { removed: 0 };
+
+  const headers = data[0].map(normalizeHeader);
+  const idIdx = headers.indexOf('SubjectID');
+  if (idIdx === -1) throw AppError('Subjects sheet has no SubjectID header.', 'SERVER_ERROR');
+
+  // Walk from bottom up so deletions don't shift later indices.
+  let removed = 0;
+  for (let r = data.length - 1; r >= 1; r--) {
+    const subjectId = String(data[r][idIdx] || '').trim();
+    if (!subjectId) continue;
+    const subject = { SubjectID: subjectId };
+    if (!findSubjectSheet(subject)) {
+      sheet.deleteRow(r + 1);
+      removed++;
+    }
+  }
+  return { removed: removed };
+}
+
+// =====================================================
+// WRITE HANDLERS — register (Classes / Subjects / Students)
+// =====================================================
+
+function addClass(actor, body) {
+  if (actor.role !== 'staff') throw AppError('Only teachers/CRs can add classes.', 'FORBIDDEN');
+
+  const className = String(body.className || '').trim();
+  const academicYear = String(body.academicYear || '').trim();
+  if (!className) throw AppError('Class name is required.', 'VALIDATION_ERROR');
+
+  const classId = generateSequentialId(SHEETS.CLASSES, 'ClassID', 'CLS', 3);
+  appendRowByHeaders(SHEETS.CLASSES, { ClassID: classId, ClassName: className, AcademicYear: academicYear });
+  return { classId: classId, className: className, academicYear: academicYear };
+}
+
+function addSubject(actor, body) {
+  if (actor.role !== 'staff') throw AppError('Only teachers/CRs can add subjects.', 'FORBIDDEN');
+
+  const subjectName = String(body.subjectName || '').trim();
+  const classId = String(body.classId || '').trim();
+  const teacherId = String(body.teacherId || actor.teacherId || '').trim();
+
+  if (!subjectName) throw AppError('Subject name is required.', 'VALIDATION_ERROR');
+  if (!classId) throw AppError('Class is required.', 'VALIDATION_ERROR');
+
+  const classes = getSheetData(SHEETS.CLASSES);
+  if (!classes.some(function (c) { return String(c.ClassID) === classId; })) {
+    throw AppError('Unknown class "' + classId + '".', 'BAD_REQUEST');
+  }
+  if (teacherId) {
+    const teachers = getSheetData(SHEETS.TEACHERS);
+    if (!teachers.some(function (t) { return String(t.TeacherID) === teacherId; })) {
+      throw AppError('Unknown teacher "' + teacherId + '".', 'BAD_REQUEST');
+    }
+  }
+
+  const subjectId = generateSequentialId(SHEETS.SUBJECTS, 'SubjectID', 'SUB', 3);
+  appendRowByHeaders(SHEETS.SUBJECTS, {
+    SubjectID: subjectId,
+    SubjectName: subjectName,
+    TeacherID: teacherId,
+    ClassID: classId
+  });
+
+  // Only place in the codebase allowed to CREATE a grid sheet.
+  getOrCreateSubjectSheet({ SubjectID: subjectId, SubjectName: subjectName, ClassID: classId });
+
+  return { subjectId: subjectId, subjectName: subjectName, classId: classId, teacherId: teacherId };
+}
+
+function addStudent(actor, body) {
+  if (actor.role !== 'staff') throw AppError('Only teachers/CRs can add students.', 'FORBIDDEN');
+
+  const seatNumber = String(body.seatNumber || '').trim();
+  const name = String(body.name || '').trim();
+  const email = String(body.email || '').trim().toLowerCase();
+  const classId = String(body.classId || '').trim();
+
+  if (!seatNumber) throw AppError('Seat number is required.', 'VALIDATION_ERROR');
+  if (!name) throw AppError('Student name is required.', 'VALIDATION_ERROR');
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw AppError('A valid email is required.', 'VALIDATION_ERROR');
+  }
+  if (!classId) throw AppError('Class is required.', 'VALIDATION_ERROR');
+
+  const classes = getSheetData(SHEETS.CLASSES);
+  if (!classes.some(function (c) { return String(c.ClassID) === classId; })) {
+    throw AppError('Unknown class "' + classId + '".', 'BAD_REQUEST');
+  }
+
+  assertEmailNotTaken(email);
+  assertSeatNumberNotTaken(seatNumber);
+
+  const studentId = seatNumber; // the seat number IS the student's identifier
+  appendRowByHeaders(SHEETS.STUDENTS, {
+    StudentID: studentId,
+    Name: name,
+    Email: email,
+    ClassID: classId,
+    Status: 'Active'
+  });
+
+  syncStudentAcrossSubjectSheets(studentId, name, classId);
+
+  return { studentId: studentId, name: name, email: email, classId: classId };
+}
+
+// =====================================================
+// WRITE HANDLERS — Attendance (today freely editable; any other
+// date is a one-time backfill that locks the instant it's saved)
 // =====================================================
 
 function saveAttendance(actor, body) {
@@ -498,68 +1075,194 @@ function saveAttendance(actor, body) {
   if (!subjectId) throw AppError('Subject is required.', 'VALIDATION_ERROR');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw AppError('Date must be in YYYY-MM-DD format.', 'VALIDATION_ERROR');
 
-  const subject = assertSubjectInScope(actor, subjectId);
+  const today = todayString();
+  if (date > today) {
+    throw AppError('You cannot mark attendance for a future date.', 'VALIDATION_ERROR');
+  }
+
+  const subject = assertSubjectExists(subjectId);
+
+  // A subject whose sheet tab has been deleted is gone — do NOT silently
+  // recreate it here. Only addSubject() is allowed to create a grid sheet.
+  const sheet = findSubjectSheet(subject);
+  if (!sheet) {
+    throw AppError(
+      'This subject no longer exists. It may have been deleted. Refresh the page and pick another subject.',
+      'NOT_FOUND'
+    );
+  }
 
   const records = Array.isArray(body.records) && body.records.length
     ? body.records
-    : [{ studentId: body.studentId, status: body.status }];
-
+    : [{ name: body.name, status: body.status }];
   if (!records.length) throw AppError('No attendance records provided.', 'VALIDATION_ERROR');
 
-  const sheetInfo = getSheetRows(SHEETS.ATTENDANCE);
-  const statusCol = sheetInfo.headers.indexOf('Status') + 1;
-  const results = [];
+  // Only "name" is required on each record now — no studentId / seat check.
+   // Each record must carry EITHER a name OR a studentId. If only a
+  // studentId is present, we look the name up from the Students master
+  // sheet so the sheet row can still be matched by name.
+  const allStudents = getSheetData(SHEETS.STUDENTS);
+  const nameById = {};
+  allStudents.forEach(function (s) {
+    if (s.StudentID) nameById[String(s.StudentID)] = String(s.Name || '').trim();
+  });
 
   records.forEach(function (rec) {
-    const studentId = String(rec.studentId || '').trim();
+    const status = Number(rec.status);
+    let name = String(rec.name || '').trim();
+    if (!name && rec.studentId) {
+      name = nameById[String(rec.studentId)] || '';
+    }
+    if (!name) {
+      throw AppError('Each record needs a name (or a known studentId).', 'VALIDATION_ERROR');
+    }
+    if (status !== 0 && status !== 1) {
+      throw AppError('status must be 0 or 1 for "' + name + '".', 'VALIDATION_ERROR');
+    }
+    rec.name = name; // normalize so the write loop below always has it
+  });
+
+  let grid = sheet.getDataRange().getValues();
+  let header = grid[0];
+  let totalColIdx = findTotalColumnIndex(header);
+  let dateCol = findDateColumnIndex(header, date, totalColIdx);
+
+  if (dateCol !== -1) {
+    // Column already exists. Only allowed to keep writing to it if it's today.
+    if (date !== today) {
+      throw AppError('This date has already been submitted and is locked.', 'FORBIDDEN');
+    }
+  } else {
+    // No column yet — this is either today's first save, or a one-time
+    // backfill for a missed day. Either way, insert it in sorted order.
+    dateCol = insertDateColumn(sheet, date);
+    grid = sheet.getDataRange().getValues();
+    header = grid[0];
+  }
+
+  const results = [];
+  records.forEach(function (rec) {
+    const name = String(rec.name || '').trim();
     const status = Number(rec.status);
 
-    if (!studentId) throw AppError('studentId is required for every record.', 'VALIDATION_ERROR');
-    if (status !== 0 && status !== 1) {
-      throw AppError('status must be 0 or 1 for student "' + studentId + '".', 'VALIDATION_ERROR');
+    // Match an existing row by NAME (column B / index 1).
+    let rowNumber = -1;
+    for (let r = 1; r < grid.length; r++) {
+      if (String(grid[r][1]).trim() === name) { rowNumber = r + 1; break; }
     }
 
-    assertStudentInScope(actor, studentId, subject.ClassID);
-
-    const existing = sheetInfo.rows.find(function (r) {
-      return formatDate(r.values.Date) === date &&
-             String(r.values.SubjectID).trim() === subjectId &&
-             String(r.values.StudentID).trim() === studentId;
-    });
-
-    if (existing) {
-      sheetInfo.sheet.getRange(existing.rowNumber, statusCol).setValue(status);
-      results.push({ studentId: studentId, attendanceId: existing.values.AttendanceID, action: 'updated' });
-    } else {
-      const attendanceId = 'ATT' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
-      sheetInfo.sheet.appendRow([attendanceId, date, subjectId, studentId, status]);
-      sheetInfo.rows.push({
-        rowNumber: sheetInfo.sheet.getLastRow(),
-        values: { AttendanceID: attendanceId, Date: date, SubjectID: subjectId, StudentID: studentId, Status: status }
-      });
-      results.push({ studentId: studentId, attendanceId: attendanceId, action: 'created' });
+    // If no row exists for this name, append a fresh one. We still put a
+    // placeholder in column A so the sheet shape stays intact, but nothing
+    // depends on it being a real Student ID.
+    if (rowNumber === -1) {
+      sheet.appendRow([name, name]);
+      rowNumber = sheet.getLastRow();
+      grid.push([name, name]);
     }
+
+    sheet.getRange(rowNumber, dateCol + 1).setValue(status);
+    applyCellColor(sheet, rowNumber, dateCol, status);
+    results.push({ name: name, action: 'saved' });
   });
+
+  recomputeTotalsColumn(sheet);
 
   return { date: date, subjectId: subjectId, results: results };
 }
 
+// "Deleting" a mark just clears that student's cell — only ever allowed
+// for today's column, same lock rule as saving.
 function deleteAttendance(actor, body) {
   if (actor.role !== 'staff') {
-    throw AppError('Only teachers/CRs can delete attendance.', 'FORBIDDEN');
+    throw AppError('Only teachers/CRs can remove attendance.', 'FORBIDDEN');
   }
 
   const attendanceId = String(body.attendanceId || '').trim();
   if (!attendanceId) throw AppError('attendanceId is required.', 'VALIDATION_ERROR');
 
-  const sheetInfo = getSheetRows(SHEETS.ATTENDANCE);
-  const row = sheetInfo.rows.find(function (r) { return String(r.values.AttendanceID).trim() === attendanceId; });
-  if (!row) throw AppError('Attendance record not found.', 'NOT_FOUND');
+  const parts = attendanceId.split('_');
+  if (parts.length < 3) throw AppError('Invalid record reference.', 'BAD_REQUEST');
+  const date = parts[parts.length - 1];
+  const studentId = parts[parts.length - 2];
+  const subjectId = parts.slice(0, parts.length - 2).join('_');
 
-  assertSubjectInScope(actor, row.values.SubjectID);
+  const today = todayString();
+  if (date !== today) {
+    throw AppError('This record is from a previous day and can no longer be changed.', 'FORBIDDEN');
+  }
 
-  sheetInfo.sheet.deleteRow(row.rowNumber);
+  const subject = assertSubjectExists(subjectId);
+  const sheet = findSubjectSheet(subject);
+  if (!sheet) throw AppError('This subject no longer exists.', 'NOT_FOUND');
+
+  const grid = sheet.getDataRange().getValues();
+  const header = grid[0];
+  const totalColIdx = findTotalColumnIndex(header);
+
+  const dateCol = findDateColumnIndex(header, date, totalColIdx);
+  if (dateCol === -1) throw AppError('Record not found.', 'NOT_FOUND');
+
+  const rowNumber = findStudentRowNumber(grid, studentId);
+  if (rowNumber === -1) throw AppError('Record not found.', 'NOT_FOUND');
+
+  sheet.getRange(rowNumber, dateCol + 1).clearContent();
+  applyCellColor(sheet, rowNumber, dateCol, '');
+  recomputeTotalsColumn(sheet);
   return { deleted: attendanceId };
+}
+
+// =====================================================
+// ONE-TIME MIGRATION (optional — run manually from the editor)
+// =====================================================
+
+function migrateOldAttendance() {
+  let oldRows;
+  try {
+    oldRows = getSheetData(SHEETS.ATTENDANCE);
+  } catch (e) {
+    Logger.log('No legacy Attendance sheet found — nothing to migrate.');
+    return;
+  }
+
+  const subjects = getSheetData(SHEETS.SUBJECTS);
+  const bySubject = {};
+  oldRows.forEach(function (r) {
+    const subjectId = String(r.SubjectID || '').trim();
+    if (!subjectId) return;
+    bySubject[subjectId] = bySubject[subjectId] || [];
+    bySubject[subjectId].push(r);
+  });
+
+  Object.keys(bySubject).forEach(function (subjectId) {
+    const subject = subjects.find(function (s) { return String(s.SubjectID) === subjectId; });
+    if (!subject) return;
+
+    const sheet = getOrCreateSubjectSheet(subject);
+    bySubject[subjectId].forEach(function (r) {
+      const date = formatDate(r.Date);
+      const studentId = String(r.StudentID).trim();
+      const status = Number(r.Status);
+      if (!date || !studentId || (status !== 0 && status !== 1)) return;
+
+      let grid = sheet.getDataRange().getValues();
+      let header = grid[0];
+      const totalColIdx = findTotalColumnIndex(header);
+      let dateCol = findDateColumnIndex(header, date, totalColIdx);
+      if (dateCol === -1) {
+        dateCol = insertDateColumn(sheet, date);
+        grid = sheet.getDataRange().getValues();
+      }
+      const rowNumber = findStudentRowNumber(grid, studentId);
+      if (rowNumber !== -1) {
+        sheet.getRange(rowNumber, dateCol + 1).setValue(status);
+        applyCellColor(sheet, rowNumber, dateCol, status);
+      }
+    });
+
+    recomputeTotalsColumn(sheet);
+  });
+
+  Logger.log('Migration complete.');
 }
 
 // =====================================================
