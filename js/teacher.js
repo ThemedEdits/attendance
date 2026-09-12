@@ -46,7 +46,6 @@ let roster = [];
 let isRosterLocked = false;
 let searchQuery = "";
 
-// Blueprint state
 let bpData = null;
 let bpSort = { key: "name", dir: "asc" };
 let bpSearch = "";
@@ -85,9 +84,6 @@ guardPage("staff", async (me, boot) => {
   csSubjTeacher?.sync();
 });
 
-// Called when the server tells us a subject no longer exists. Removes it
-// from every cached list and from the subject dropdown so the UI never
-// shows a ghost again for the rest of this session.
 function evictSubjectFromCaches(subjectId) {
   const sid = String(subjectId);
   allSubjects = allSubjects.filter((s) => String(s.SubjectID) !== sid);
@@ -122,10 +118,6 @@ function renderClassOptions(selectedId) {
   csSubjClass?.sync();
   csStudClass?.sync();
 }
-
-// ---------------------------------------------------------------------------
-// Attendance: class -> subject -> date -> roster
-// ---------------------------------------------------------------------------
 
 classSelect.addEventListener("change", onClassChange);
 subjectSelect.addEventListener("change", onSubjectChange);
@@ -184,9 +176,6 @@ async function onSubjectChange() {
     return;
   }
 
-  // Guard: if the subject isn't in our cached master list any more (e.g. it
-  // was deleted while this page was open), evict it immediately instead of
-  // waiting for a failed network round-trip.
   const stillExists = allSubjects.some((s) => String(s.SubjectID) === String(subjectId));
   if (!stillExists) {
     evictSubjectFromCaches(subjectId);
@@ -233,6 +222,7 @@ function buildRosterForSelection() {
   roster = students.map((s) => ({
     StudentID: s.StudentID,
     Name: s.Name,
+    // Default to present (checked) unless we have an explicit 0 for this date.
     status: existingByStudent.hasOwnProperty(String(s.StudentID)) ? existingByStudent[String(s.StudentID)] : 1
   }));
 
@@ -289,7 +279,17 @@ function renderRoster() {
 
     <div class="table-responsive-container">
       <table class="ledger">
-        <thead><tr><th>Student ID</th><th>Name</th><th>Attendance Status</th></tr></thead>
+        <thead>
+          <tr>
+            <th style="width:56px; text-align:center;">
+              <div class="attendance-checkbox-wrap">
+                <input type="checkbox" id="roster-master-checkbox" class="attendance-checkbox attendance-master-checkbox" aria-label="Mark all students" />
+              </div>
+            </th>
+            <th style="width:132px;">Student ID</th>
+            <th>Name</th>
+          </tr>
+        </thead>
         <tbody id="roster-tbody"></tbody>
       </table>
     </div>
@@ -312,9 +312,43 @@ function renderRoster() {
     </div>
   `;
 
-  document.getElementById("roster-search").addEventListener("input", (e) => {
+   const searchInput = document.getElementById("roster-search");
+  searchInput.addEventListener("input", (e) => {
     searchQuery = e.target.value;
     renderRosterRows();
+  });
+
+  // Enter → if exactly one student matches the current query, toggle
+  // their checkbox and clear the search so the full list reappears.
+  // Works the same on mobile keyboards (they emit a proper Enter).
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return;
+
+    const matches = roster.filter((r) =>
+      String(r.StudentID).toLowerCase().includes(q) ||
+      String(r.Name).toLowerCase().includes(q)
+    );
+
+    if (matches.length !== 1) return; // 0 or 2+ matches: do nothing
+
+    const target = matches[0];
+    const idx = roster.indexOf(target);
+    if (idx === -1) return;
+
+    // Toggle
+    roster[idx].status = roster[idx].status === 1 ? 0 : 1;
+
+    // Clear search so the full roster is visible again and the next
+    // entry starts fresh.
+    searchQuery = "";
+    searchInput.value = "";
+
+    renderRosterRows();
+    searchInput.focus();
   });
 
   document.getElementById("batch-all-present").addEventListener("click", () => {
@@ -323,6 +357,13 @@ function renderRoster() {
   });
   document.getElementById("batch-all-absent").addEventListener("click", () => {
     roster.forEach(r => r.status = 0);
+    renderRosterRows();
+  });
+
+  const master = document.getElementById("roster-master-checkbox");
+  master.addEventListener("change", () => {
+    const target = master.checked ? 1 : 0;
+    roster.forEach(r => r.status = target);
     renderRosterRows();
   });
 
@@ -344,55 +385,91 @@ function renderRosterRows() {
     `;
   }
 
+  // Master checkbox sync
+  const master = document.getElementById("roster-master-checkbox");
+  if (master) {
+    if (presentCount === roster.length && roster.length > 0) {
+      master.checked = true;
+      master.indeterminate = false;
+    } else if (presentCount === 0) {
+      master.checked = false;
+      master.indeterminate = false;
+    } else {
+      master.checked = false;
+      master.indeterminate = true;
+    }
+  }
+
   const visible = getVisibleRoster();
   const tbody = document.getElementById("roster-tbody");
   if (!tbody) return;
 
-  if (!visible.length) {
-    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:2rem 1rem;">No students match "${escapeHtml(searchQuery)}".</td></tr>`;
-    return;
-  }
+  // ---- Phase 1: if the set of visible students changed (first render,
+  // search query changed, etc.), rebuild the tbody. Otherwise skip the
+  // rebuild entirely so existing checkboxes keep their DOM identity and
+  // don't replay the check animation.
+  const currentIds = Array.from(tbody.querySelectorAll("tr[data-row-index]"))
+    .map((tr) => tr.dataset.rowIndex).join(",");
+  const nextIds = visible.map((r) => roster.indexOf(r)).join(",");
 
-  tbody.innerHTML = visible.map((r) => {
-    const index = roster.indexOf(r);
-    const initials = r.Name ? r.Name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "?";
-    return `
-      <tr>
-        <td><span class="student-id-code">${r.StudentID}</span></td>
-        <td>
-          <div class="student-cell">
-            <div class="student-avatar">${initials}</div>
-            <span style="font-weight:600;">${r.Name}</span>
-          </div>
-        </td>
-        <td>
-          <div class="roll-toggle" data-index="${index}">
-            <button type="button" class="${r.status === 1 ? "active present" : ""}" data-status="1">
-              <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
-              </svg>
-              Present
-            </button>
-            <button type="button" class="${r.status === 0 ? "active absent" : ""}" data-status="0">
-              <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-              </svg>
-              Absent
-            </button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join("");
+  if (currentIds !== nextIds) {
+    if (!visible.length) {
+      tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:2rem 1rem;">No students match "${escapeHtml(searchQuery)}".</td></tr>`;
+      return;
+    }
 
-  tbody.querySelectorAll(".roll-toggle").forEach((toggle) => {
-    const index = Number(toggle.dataset.index);
-    toggle.querySelectorAll("button").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        roster[index].status = Number(btn.dataset.status);
+    tbody.innerHTML = visible.map((r) => {
+      const index = roster.indexOf(r);
+      const checked = r.status === 1 ? "checked" : "";
+      return `
+        <tr data-row-index="${index}" style="cursor:pointer;">
+          <td style="width:56px; text-align:center;">
+            <div class="attendance-checkbox-wrap">
+              <input
+                type="checkbox"
+                class="attendance-checkbox"
+                data-index="${index}"
+                aria-label="Mark ${escapeHtml(r.Name)} present"
+                ${checked}
+              />
+            </div>
+          </td>
+          <td style="width:132px;"><span class="student-id-code">${escapeHtml(r.StudentID)}</span></td>
+          <td><span style="font-weight:600;">${escapeHtml(r.Name)}</span></td>
+        </tr>
+      `;
+    }).join("");
+
+    tbody.querySelectorAll(".attendance-checkbox").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const index = Number(cb.dataset.index);
+        roster[index].status = cb.checked ? 1 : 0;
         renderRosterRows();
       });
     });
+
+    tbody.querySelectorAll("tr[data-row-index]").forEach((tr) => {
+      tr.addEventListener("click", (e) => {
+        if (e.target.closest(".attendance-checkbox")) return;
+        const cb = tr.querySelector(".attendance-checkbox");
+        if (!cb) return;
+        cb.checked = !cb.checked;
+        const index = Number(cb.dataset.index);
+        roster[index].status = cb.checked ? 1 : 0;
+        renderRosterRows();
+      });
+    });
+    return;
+  }
+
+  // ---- Phase 2: same rows are visible; just sync each checkbox's
+  // `checked` state to the roster without recreating any element. No
+  // DOM nodes are replaced, so the check animation fires only on the
+  // one row whose state actually flipped.
+  tbody.querySelectorAll(".attendance-checkbox").forEach((cb) => {
+    const index = Number(cb.dataset.index);
+    const want = roster[index] && roster[index].status === 1;
+    if (cb.checked !== want) cb.checked = want;
   });
 }
 
@@ -401,23 +478,15 @@ function renderLockedRoster() {
   const presentCount = roster.filter((r) => r.status === 1).length;
   const absentCount = roster.length - presentCount;
 
-  const rows = visible.map((r) => {
-    const initials = r.Name ? r.Name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "?";
-    return `
-      <tr>
-        <td><span class="student-id-code">${r.StudentID}</span></td>
-        <td>
-          <div class="student-cell">
-            <div class="student-avatar">${initials}</div>
-            <span style="font-weight:600;">${r.Name}</span>
-          </div>
-        </td>
-        <td>
-          <span class="status-pill ${r.status === 1 ? "present" : "absent"}">${r.status === 1 ? "Present" : "Absent"}</span>
-        </td>
-      </tr>
-    `;
-  }).join("");
+  const rows = visible.map((r) => `
+    <tr>
+      <td style="width:56px; text-align:center;">
+        <span class="status-pill ${r.status === 1 ? "present" : "absent"}">${r.status === 1 ? "P" : "A"}</span>
+      </td>
+      <td style="width:132px;"><span class="student-id-code">${escapeHtml(r.StudentID)}</span></td>
+      <td><span style="font-weight:600;">${escapeHtml(r.Name)}</span></td>
+    </tr>
+  `).join("");
 
   rosterWrap.innerHTML = `
     <div class="error-box" style="background:var(--canvas-alt); color:var(--text-soft); border-color:var(--border); animation:none;">
@@ -438,7 +507,13 @@ function renderLockedRoster() {
     </div>
     <div class="table-responsive-container">
       <table class="ledger">
-        <thead><tr><th>Student ID</th><th>Name</th><th>Status</th></tr></thead>
+        <thead>
+          <tr>
+            <th style="width:56px; text-align:center;">Status</th>
+            <th style="width:132px;">Student ID</th>
+            <th>Name</th>
+          </tr>
+        </thead>
         <tbody>${rows || `<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:2rem 1rem;">No students match "${escapeHtml(searchQuery)}".</td></tr>`}</tbody>
       </table>
     </div>
@@ -491,18 +566,13 @@ async function onSaveClick() {
       records: roster.map((r) => ({ studentId: r.StudentID, name: r.Name, status: r.status }))
     });
 
-    // If the response body was lost in the redirect, we don't know if the
-    // save landed. Re-fetch the blueprint from the server — it's the only
-    // reliable source of truth. Then update the local cache from that.
     if (result === null) {
       showToast("Save may not have completed cleanly — re-syncing from the server.", "warning");
       await loadBlueprint(subjectId);
-      // Also refresh the attendance cache used by the roster.
       try {
         attendanceBySubject[subjectId] = await getAttendance({ subjectId });
       } catch (_) { /* non-fatal */ }
     } else {
-      // Normal path — update the local cache optimistically.
       const cache = (attendanceBySubject[subjectId] || []).filter((r) => r.Date !== selectedDate);
       roster.forEach((r) => {
         cache.push({
@@ -516,8 +586,6 @@ async function onSaveClick() {
       attendanceBySubject[subjectId] = cache;
       isRosterLocked = isPastDate;
 
-      // If the server skipped any records (student not enrolled on the
-      // subject sheet), surface that clearly instead of silently succeeding.
       const skipped = (result && result.results ? result.results : []).filter((x) => x.action === "skipped");
       if (skipped.length) {
         showToast(
@@ -547,7 +615,7 @@ async function onSaveClick() {
 }
 
 // ---------------------------------------------------------------------------
-// BLUEPRINT — full subject sheet viewer with hover menus, sorting, actions
+// BLUEPRINT
 // ---------------------------------------------------------------------------
 
 function resetBlueprint(msg) {
@@ -564,7 +632,6 @@ async function loadBlueprint(subjectId) {
     bpData = await getSubjectSheet(subjectId);
     bpLoading = false;
 
-    // Kill the loader the moment we have data, before painting the table.
     const loader = document.getElementById("bp-loading-mount");
     if (loader) loader.innerHTML = "";
 
@@ -618,8 +685,6 @@ function renderBlueprintShell() {
     renderBlueprintTable();
   });
 
-  // Wire the sort dropdown through the same custom-select component used
-  // everywhere else, so it matches the rest of the app visually.
   const sortSel = document.getElementById("bp-sort-key");
   sortSel.value = currentSortChoiceValue();
   const csSort = initCustomSelect(sortSel);
@@ -629,8 +694,6 @@ function renderBlueprintShell() {
     renderBlueprintTable();
   });
 
-  // Show a loader in its own dedicated slot — we remove just this slot
-  // once data arrives, leaving the toolbar and mount point untouched.
   document.getElementById("bp-loading-mount").innerHTML =
     `<div class="spinner-row"><span class="modern-spinner"></span><span>Loading register sheet…</span></div>`;
 }
@@ -729,7 +792,6 @@ function renderBlueprintTable() {
   }).join("");
 
   const bodyRows = filtered.map((r) => {
-    const initials = r.name ? r.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "?";
     const cells = dateCols.map((d) => {
       const v = r.marks[d.date];
       const cls = v === 1 ? "is-present" : v === 0 ? "is-absent" : "is-empty";
@@ -743,10 +805,7 @@ function renderBlueprintTable() {
           <span class="student-id-code">${escapeHtml(r.studentId || "—")}</span>
         </td>
         <td class="bp-cell bp-cell--name">
-          <div class="student-cell">
-            <div class="student-avatar">${initials}</div>
-            <span style="font-weight:600;">${escapeHtml(r.name || "Unnamed")}</span>
-          </div>
+          <span style="font-weight:600;">${escapeHtml(r.name || "Unnamed")}</span>
           <button type="button" class="bp-kebab bp-kebab--row" data-menu="row" data-row="${r.sheetRowNumber}" aria-label="Row actions">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
           </button>
@@ -972,7 +1031,7 @@ function lockIcon() {
 }
 
 // ---------------------------------------------------------------------------
-// Manage: add class / subject / student
+// Manage forms
 // ---------------------------------------------------------------------------
 
 document.getElementById("add-class-form").addEventListener("submit", async (e) => {

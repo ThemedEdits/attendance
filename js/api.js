@@ -12,9 +12,32 @@ class ApiError extends Error {
 }
 
 async function getIdToken(forceRefresh = false) {
-  const user = auth.currentUser;
+  const user = auth.currentUser || await waitForCurrentUser();
   if (!user) throw new ApiError("You're not signed in.", "AUTH_REQUIRED");
   return user.getIdToken(forceRefresh);
+}
+
+let authStatePromise;
+
+function waitForCurrentUser() {
+  if (!authStatePromise) {
+    authStatePromise = new Promise((resolve) => {
+      let settled = false;
+      const unsubscribe = auth.onAuthStateChanged((user) => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        resolve(user);
+      });
+      setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        resolve(auth.currentUser);
+      }, 8000);
+    });
+  }
+  return authStatePromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,8 +82,18 @@ function handleResponse(response, body) {
 // ---------------------------------------------------------------------------
 
 async function requestWithToken(makeRequest, tolerateUnparseable) {
-  let response = await makeRequest(await getIdToken());
-  let parsed = await parseResponseTolerant(response);
+  let response;
+  let parsed;
+  let token = await getIdToken();
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await makeRequest(token);
+    parsed = await parseResponseTolerant(response);
+
+    if (parsed !== UNPARSEABLE || response.status !== 404 || tolerateUnparseable) break;
+    await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    token = await getIdToken(attempt > 0);
+  }
 
   // Only refresh the token if the SERVER told us it was invalid in a
   // well-formed response. A lost/HTML body is NOT an auth failure.
@@ -69,10 +102,9 @@ async function requestWithToken(makeRequest, tolerateUnparseable) {
     parsed = await parseResponseTolerant(response);
   }
 
-  // GET-only retry for a stale redirect HTML page.
-  if (parsed === UNPARSEABLE && !tolerateUnparseable && response && response.status === 404) {
-    await new Promise((r) => setTimeout(r, 250));
-    response = await makeRequest(await getIdToken());
+  // A transient auth restoration can make the first request run without a token.
+  if (parsed && parsed.success === false && parsed.code === "AUTH_REQUIRED") {
+    response = await makeRequest(await getIdToken(true));
     parsed = await parseResponseTolerant(response);
   }
 

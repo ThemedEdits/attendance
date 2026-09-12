@@ -88,7 +88,7 @@ const SHEETS = {
 // Cell background colors for attendance marks (mirrors the CSS palette).
 const ATTENDANCE_COLORS = {
   PRESENT: '#d9ead3', // light green
-  ABSENT:  '#f4cccc'  // light red
+  ABSENT: '#f4cccc'  // light red
 };
 
 function authorizeExternalRequests() {
@@ -1097,10 +1097,11 @@ function saveAttendance(actor, body) {
     : [{ name: body.name, status: body.status }];
   if (!records.length) throw AppError('No attendance records provided.', 'VALIDATION_ERROR');
 
-  // Only "name" is required on each record now — no studentId / seat check.
-   // Each record must carry EITHER a name OR a studentId. If only a
-  // studentId is present, we look the name up from the Students master
-  // sheet so the sheet row can still be matched by name.
+    // Each record must carry a studentId (preferred) or a name. We match the
+  // subject sheet by studentId first, falling back to name only if the
+  // studentId isn't present on the sheet. We NEVER auto-create rows here —
+  // the Students master sheet is the source of truth, and students are
+  // added via addStudent() which syncs them across every subject sheet.
   const allStudents = getSheetData(SHEETS.STUDENTS);
   const nameById = {};
   allStudents.forEach(function (s) {
@@ -1109,17 +1110,30 @@ function saveAttendance(actor, body) {
 
   records.forEach(function (rec) {
     const status = Number(rec.status);
+    let studentId = String(rec.studentId || '').trim();
     let name = String(rec.name || '').trim();
-    if (!name && rec.studentId) {
-      name = nameById[String(rec.studentId)] || '';
+
+    // If only a name was provided, try to resolve the studentId.
+    if (!studentId && name) {
+      const found = allStudents.find(function (s) {
+        return String(s.Name || '').trim().toLowerCase() === name.toLowerCase();
+      });
+      if (found) studentId = String(found.StudentID);
     }
-    if (!name) {
-      throw AppError('Each record needs a name (or a known studentId).', 'VALIDATION_ERROR');
+    // If only a studentId was provided, resolve the display name.
+    if (!name && studentId) {
+      name = nameById[studentId] || '';
+    }
+
+    if (!studentId && !name) {
+      throw AppError('Each record needs a studentId or a name.', 'VALIDATION_ERROR');
     }
     if (status !== 0 && status !== 1) {
-      throw AppError('status must be 0 or 1 for "' + name + '".', 'VALIDATION_ERROR');
+      throw AppError('status must be 0 or 1 for "' + (name || studentId) + '".', 'VALIDATION_ERROR');
     }
-    rec.name = name; // normalize so the write loop below always has it
+
+    rec.studentId = studentId;
+    rec.name = name;
   });
 
   let grid = sheet.getDataRange().getValues();
@@ -1128,13 +1142,10 @@ function saveAttendance(actor, body) {
   let dateCol = findDateColumnIndex(header, date, totalColIdx);
 
   if (dateCol !== -1) {
-    // Column already exists. Only allowed to keep writing to it if it's today.
     if (date !== today) {
       throw AppError('This date has already been submitted and is locked.', 'FORBIDDEN');
     }
   } else {
-    // No column yet — this is either today's first save, or a one-time
-    // backfill for a missed day. Either way, insert it in sorted order.
     dateCol = insertDateColumn(sheet, date);
     grid = sheet.getDataRange().getValues();
     header = grid[0];
@@ -1142,27 +1153,42 @@ function saveAttendance(actor, body) {
 
   const results = [];
   records.forEach(function (rec) {
+    const studentId = String(rec.studentId || '').trim();
     const name = String(rec.name || '').trim();
     const status = Number(rec.status);
 
-    // Match an existing row by NAME (column B / index 1).
+    // Prefer matching by Student ID (column A). Fall back to Name (column B).
     let rowNumber = -1;
-    for (let r = 1; r < grid.length; r++) {
-      if (String(grid[r][1]).trim() === name) { rowNumber = r + 1; break; }
+    if (studentId) {
+      for (let r = 1; r < grid.length; r++) {
+        if (String(grid[r][0]).trim() === studentId) { rowNumber = r + 1; break; }
+      }
+    }
+    if (rowNumber === -1 && name) {
+      for (let r = 1; r < grid.length; r++) {
+        if (String(grid[r][1]).trim().toLowerCase() === name.toLowerCase()) {
+          rowNumber = r + 1;
+          break;
+        }
+      }
     }
 
-    // If no row exists for this name, append a fresh one. We still put a
-    // placeholder in column A so the sheet shape stays intact, but nothing
-    // depends on it being a real Student ID.
     if (rowNumber === -1) {
-      sheet.appendRow([name, name]);
-      rowNumber = sheet.getLastRow();
-      grid.push([name, name]);
+      // Attendance writes NEVER create rows. The student must already exist
+      // on this sheet — either they're enrolled in the class, or they were
+      // manually added by a staff member.
+      results.push({
+        studentId: studentId,
+        name: name,
+        action: 'skipped',
+        reason: 'not_enrolled'
+      });
+      return;
     }
 
     sheet.getRange(rowNumber, dateCol + 1).setValue(status);
     applyCellColor(sheet, rowNumber, dateCol, status);
-    results.push({ name: name, action: 'saved' });
+    results.push({ studentId: studentId, name: name, action: 'saved' });
   });
 
   recomputeTotalsColumn(sheet);
