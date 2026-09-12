@@ -1,55 +1,55 @@
 /* =====================================================
    ATTENDANCE REGISTER - MODERN DESIGN SYSTEM
    Clean, sophisticated educational management interface
-   Palette: Indigo Accent, Slate Canvas, Emerald / Rose Status
+   Palette: Deep Teal Accent, Warm Neutral Canvas, Muted Semantic Status
 ===================================================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
   /* Brand & Accents */
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-active: #3730a3;
-  --primary-light: #eef2ff;
-  --primary-subtle: #e0e7ff;
-  --primary-glow: rgba(79, 70, 229, 0.18);
+  --primary: #1f5b4b;
+  --primary-hover: #17493c;
+  --primary-active: #123b31;
+  --primary-light: #edf4f1;
+  --primary-subtle: #d8e8e2;
+  --primary-glow: rgba(31, 91, 75, 0.16);
 
   /* Status Colors */
-  --present: #059669;
-  --present-hover: #047857;
-  --present-bg: #ecfdf5;
-  --present-border: #a7f3d0;
-  --present-glow: rgba(16, 185, 129, 0.2);
+  --present: #2f6b57;
+  --present-hover: #255745;
+  --present-bg: #eef6f2;
+  --present-border: #c9ded5;
+  --present-glow: rgba(47, 107, 87, 0.16);
 
-  --absent: #e11d48;
-  --absent-hover: #be123c;
-  --absent-bg: #fff1f2;
-  --absent-border: #fecdd3;
-  --absent-glow: rgba(225, 29, 72, 0.2);
+  --absent: #a14b4b;
+  --absent-hover: #853d3d;
+  --absent-bg: #fbf1f1;
+  --absent-border: #e7caca;
+  --absent-glow: rgba(161, 75, 75, 0.14);
 
-  --warning: #d97706;
-  --warning-bg: #fffbeb;
-  --warning-border: #fde68a;
+  --warning: #a8752f;
+  --warning-bg: #faf5ea;
+  --warning-border: #e7d7b8;
 
   /* Surfaces & Canvas */
-  --canvas: #f8fafc;
-  --canvas-alt: #f1f5f9;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-hover: #f8fafc;
+  --canvas: #f6f5f2;
+  --canvas-alt: #efede8;
+  --surface: #fffdfa;
+  --surface-raised: #fffdfa;
+  --surface-hover: #f6f5f2;
 
   /* Borders & Dividers */
-  --border-light: #f1f5f9;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
+  --border-light: #efede8;
+  --border: #ddd9d1;
+  --border-strong: #c9c5bd;
 
   /* Text & Typography */
-  --text-main: #0f172a;
-  --text-soft: #334155;
-  --text-muted: #64748b;
-  --text-tertiary: #94a3b8;
-  --text-inverted: #ffffff;
+  --text-main: #171716;
+  --text-soft: #4a4945;
+  --text-muted: #77736b;
+  --text-tertiary: #9a968e;
+  --text-inverted: #fffdfa;
 
   /* Fonts */
   --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -70,7 +70,7 @@
   --shadow-md: 0 4px 12px -1px rgba(15, 23, 42, 0.07), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
   --shadow-lg: 0 12px 24px -4px rgba(15, 23, 42, 0.08), 0 4px 8px -2px rgba(15, 23, 42, 0.04);
   --shadow-xl: 0 20px 30px -6px rgba(15, 23, 42, 0.12), 0 8px 14px -4px rgba(15, 23, 42, 0.05);
-  --shadow-focus: 0 0 0 3px rgba(79, 70, 229, 0.22);
+  --shadow-focus: 0 0 0 3px rgba(31, 91, 75, 0.18);
 }
 
 /* Base resets */
@@ -91,9 +91,17 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   width: 100%;
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 h1,
@@ -152,7 +160,7 @@ a:hover {
   background-color: var(--primary);
   color: var(--text-inverted);
   border-color: var(--primary);
-  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.3), 0 2px 6px -1px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 1px 3px rgba(31, 91, 75, 0.24), 0 2px 6px -1px rgba(31, 91, 75, 0.16);
 }
 
 .btn-primary:hover,
@@ -160,7 +168,7 @@ a:hover {
   background-color: var(--primary-hover);
   border-color: var(--primary-hover);
   color: var(--text-inverted);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+  box-shadow: 0 4px 12px rgba(31, 91, 75, 0.28);
   transform: translateY(-1px);
 }
 
@@ -169,7 +177,7 @@ a:hover {
   background-color: var(--primary-active);
   border-color: var(--primary-active);
   transform: translateY(1px);
-  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 1px 2px rgba(31, 91, 75, 0.16);
 }
 
 .btn-outline,
@@ -191,7 +199,7 @@ a:hover {
 .btn-danger {
   background: linear-gradient(180deg, var(--absent) 0%, var(--absent-hover) 100%);
   color: var(--text-inverted);
-  box-shadow: 0 1px 1.5px rgba(225, 29, 72, 0.3), 0 2px 6px -1px rgba(225, 29, 72, 1);
+  box-shadow: 0 1px 1.5px rgba(161, 75, 75, 0.20), 0 2px 6px -1px rgba(161, 75, 75, 0.55);
 }
 
 .btn-danger:hover {
@@ -459,8 +467,8 @@ a:hover {
 }
 
 .auth-hero {
-  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 60%, #312e81 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, #171716 0%, #1b2925 62%, #203e35 100%);
+  color: #fffdfa;
   padding: 4.5rem 4rem;
   display: flex;
   flex-direction: column;
@@ -476,7 +484,7 @@ a:hover {
   right: -20%;
   width: 500px;
   height: 500px;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, rgba(99, 102, 241, 0) 70%);
+  background: radial-gradient(circle, rgba(61, 117, 101, 0.20) 0%, rgba(99, 102, 241, 0) 70%);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -489,38 +497,38 @@ a:hover {
   font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: -0.01em;
-  color: #ffffff;
+  color: #fffdfa;
 }
 
 .brand-icon-sq {
   width: 34px;
   height: 34px;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  background: linear-gradient(135deg, #3d7565 0%, #1f5b4b 100%);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
+  color: #fffdfa;
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
 }
 
 .auth-hero__copy h1 {
   font-size: clamp(2.4rem, 4.5vw, 3.4rem);
   line-height: 1.1;
-  color: #ffffff;
+  color: #fffdfa;
   margin-bottom: 1.25rem;
   font-weight: 800;
 }
 
 .auth-hero__copy h1 .highlight-text {
-  background: linear-gradient(135deg, #818cf8 0%, #c7d2fe 100%);
+  background: linear-gradient(135deg, #7fae9f 0%, #c4d9d1 100%);
   -webkit-text-fill-color: transparent;
 }
 
 .auth-hero__copy p {
   font-size: 1.05rem;
   line-height: 1.6;
-  color: #cbd5e1;
+  color: #c9c5bd;
   max-width: 440px;
   margin: 0 0 2rem;
 }
@@ -539,16 +547,16 @@ a:hover {
   align-items: center;
   gap: 0.75rem;
   font-size: 0.95rem;
-  color: #e2e8f0;
+  color: #ddd9d1;
 }
 
 .feature-check {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: rgba(129, 140, 248, 0.2);
-  border: 1px solid rgba(129, 140, 248, 0.4);
-  color: #818cf8;
+  background: rgba(127, 174, 159, 0.16);
+  border: 1px solid rgba(127, 174, 159, 0.32);
+  color: #7fae9f;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -560,7 +568,7 @@ a:hover {
   align-items: center;
   gap: 0.6rem;
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: #9a968e;
 }
 
 .auth-hero__foot .cloud-chip {
@@ -571,7 +579,7 @@ a:hover {
   padding: 0.25rem 0.65rem;
   border-radius: var(--radius-full);
   font-size: 0.78rem;
-  color: #e2e8f0;
+  color: #ddd9d1;
 }
 
 .auth-panel {
@@ -736,8 +744,10 @@ a:hover {
 ===================================================== */
 .app-header {
   position: sticky;
-  top: 0;
+  inset-block-start: 0;
+  align-self: start;
   z-index: 90;
+  isolation: isolate;
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -748,7 +758,6 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  box-sizing: border-box;
   max-width: 100vw;
 }
 
@@ -795,8 +804,8 @@ a:hover {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary) 0%, #818cf8 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--primary) 0%, #7fae9f 100%);
+  color: #fffdfa;
   font-size: 0.78rem;
   font-weight: 700;
   display: flex;
@@ -955,7 +964,7 @@ main.container {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .manage-card:hover {
@@ -983,18 +992,18 @@ main.container {
 }
 
 .badge-class {
-  background: #e0e7ff;
-  color: #4338ca;
+  background: #d8e8e2;
+  color: #17493c;
 }
 
 .badge-subject {
-  background: #ecfdf5;
-  color: #047857;
+  background: #eef6f2;
+  color: #255745;
 }
 
 .badge-student {
-  background: #fff7ed;
-  color: #c2410c;
+  background: #f7f2ea;
+  color: #8a6338;
 }
 
 .manage-card__title {
@@ -1237,7 +1246,7 @@ main.container {
   top: 47%;
   width: 8px;
   height: 14px;
-  border: solid #ffffff;
+  border: solid #fffdfa;
   border-width: 0 3px 3px 0;
   transform: translate(-50%, -50%) rotate(45deg);
   animation: checkPop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1340,7 +1349,7 @@ main.container {
   justify-content: space-between;
   position: relative;
   overflow: hidden;
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .stat-card:hover {
@@ -1367,7 +1376,7 @@ main.container {
 }
 
 .stat-card.rate::before {
-  background: linear-gradient(90deg, var(--primary), #818cf8);
+  background: linear-gradient(90deg, var(--primary), #7fae9f);
 }
 
 .stat-card-top {
@@ -1496,7 +1505,7 @@ main.container {
 .skeleton-shimmer {
   height: 14px;
   border-radius: 4px;
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background: linear-gradient(90deg, #efede8 25%, #ddd9d1 50%, #efede8 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -1790,7 +1799,7 @@ main.container {
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background: radial-gradient(circle at center, #ffffff 0%, var(--canvas) 100%);
+  background: radial-gradient(circle at center, #fffdfa 0%, var(--canvas) 100%);
 }
 
 .center-card {
@@ -1808,13 +1817,13 @@ main.container {
   width: 64px;
   height: 64px;
   border-radius: var(--radius-lg);
-  background: #fff7ed;
-  color: #ea580c;
+  background: #f7f2ea;
+  color: #a66b38;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 1.5rem;
-  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.15);
+  box-shadow: 0 4px 12px rgba(166, 107, 56, 0.12);
 }
 
 .center-card h2 {
@@ -1938,7 +1947,8 @@ main.container {
   border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--shadow-xs);
-  overflow: hidden; /* clips corner radii only; not the scroll axis */
+  overflow: hidden;
+  /* clips corner radii only; not the scroll axis */
 }
 
 /* The one and only scroll container for the blueprint */
@@ -2227,6 +2237,11 @@ main.container {
 /* =====================================================
    RESPONSIVE DESIGN SYSTEM
 ===================================================== */
+
+/* =====================================================
+   RESPONSIVE DESIGN SYSTEM
+   All responsive overrides are grouped here.
+===================================================== */
 @media (max-width: 1024px) {
   .manage-grid {
     grid-template-columns: 1fr 1fr;
@@ -2284,7 +2299,7 @@ main.container {
     border-radius: var(--radius-sm);
     cursor: pointer;
     padding: 0;
-    transition: all 0.2s ease;
+    transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     z-index: 100;
   }
 
@@ -2446,13 +2461,29 @@ main.container {
     width: 100%;
     justify-content: flex-start;
   }
+
+  .bp-table thead th.bp-col-name {
+    position: sticky;
+    top: 0;
+    left: auto;
+    z-index: 6;
+    /* match the other top-sticky date headers, below ID's 8 */
+    min-width: 160px;
+  }
+
+  .bp-cell--name {
+    position: static;
+    left: auto;
+    min-width: 160px;
+  }
 }
 
 @media (max-width: 640px) {
-  .roster-legend{
+  .roster-legend {
     flex-direction: column;
     align-items: flex-start;
   }
+
   .stat-grid {
     grid-template-columns: 1fr;
   }
@@ -2543,6 +2574,29 @@ main.container {
     font-size: 0.85rem;
     padding: 0.55rem 0.6rem;
   }
+
+  .bp-table thead th.bp-col-name {
+    position: sticky;
+    top: 0;
+    left: auto;
+    z-index: 6;
+    min-width: 140px;
+  }
+
+  .bp-cell--name {
+    position: static;
+    left: auto;
+    min-width: 140px;
+  }
+
+  .bp-toolbar__search {
+    flex: 0 0 auto;
+    /* no grow, no shrink, height = content */
+    min-width: 0;
+    /* remove the 180px floor */
+    width: 100%;
+    /* still span the row */
+  }
 }
 
 @media (max-width: 420px) {
@@ -2560,53 +2614,15 @@ main.container {
     height: 28px;
   }
 }
-/* On narrow screens, only Student ID stays pinned HORIZONTALLY. Name
-   still sticks vertically (top: 0) so its header stays visible while the
-   body scrolls, but it scrolls horizontally along with the dates because
-   we drop its `left` offset. */
-@media (max-width: 860px) {
-  .bp-table thead th.bp-col-name {
-    position: sticky;
-    top: 0;
-    left: auto;
-    z-index: 6; /* match the other top-sticky date headers, below ID's 8 */
-    min-width: 160px;
-  }
-  .bp-cell--name {
-    position: static;
-    left: auto;
-    min-width: 160px;
-  }
-}
 
-@media (max-width: 640px) {
-  .bp-table thead th.bp-col-name {
-    position: sticky;
-    top: 0;
-    left: auto;
-    z-index: 6;
-    min-width: 140px;
-  }
-  .bp-cell--name {
-    position: static;
-    left: auto;
-    min-width: 140px;
-  }
-}
-/* Whole-row click target in the attendance roster. */
-.ledger tbody tr[data-row-index] {
-  cursor: pointer;
-  user-select: none;
-}
-.ledger tbody tr[data-row-index] .attendance-checkbox {
-  cursor: pointer;
-}
+@media (prefers-reduced-motion: reduce) {
 
-/* Checkmark animation should only play on a user-driven state change,
-   not on the initial paint of a freshly rendered checkbox. */
-.attendance-checkbox::after {
-  animation: none;
-}
-.attendance-checkbox:checked:not([data-fresh])::after {
-  animation: checkPop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
