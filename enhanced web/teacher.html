@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Class Register · Attendance Register</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+
+<body>
+  <!-- Top App Navigation -->
+  <header class="app-header">
+    <div class="app-header__brand">
+      <div class="brand-icon-sq" style="width:30px;height:30px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 11l3 3L22 4"></path>
+          <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+        </svg>
+      </div>
+      <span>Attendance Register</span>
+    </div>
+
+    <!-- Mobile Hamburger Toggle -->
+    <button type="button" class="header-hamburger-btn" id="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false">
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+    </button>
+
+    <div class="app-header__who" id="app-header-nav">
+      <span class="role-badge" id="role-badge">Teacher</span>
+      <div class="user-profile-badge">
+        <div class="user-avatar-circle" id="user-avatar">T</div>
+        <span class="user-email-text" id="user-name">Loading…</span>
+      </div>
+      <button class="btn-ghost" id="signout-btn" title="Sign out of account">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+        </svg>
+        <span>Sign out</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header-row">
+      <div>
+        <h1 class="page-title">Class Register</h1>
+        <p class="page-sub">Manage your academic classes, mark daily attendance, and review session records in real
+          time.</p>
+      </div>
+      <div class="today-chip">
+        <span class="dot"></span>
+        <span id="today-label">Loading date…</span>
+      </div>
+    </div>
+
+    <!-- SECTION 1: Add to the register -->
+    <section class="panel" id="manage-section">
+      <div class="panel-head">
+        <div>
+          <h2>
+            <span class="panel-icon-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+            </span>
+            Add to the Register
+          </h2>
+          <p>Quickly add new classes, subjects, and students. Everything synchronizes instantly across dropdowns.</p>
+        </div>
+      </div>
+
+      <div class="manage-grid">
+        <!-- Add Class -->
+        <form id="add-class-form" class="manage-card">
+          <div>
+            <div class="manage-card__header">
+              <span class="manage-card__badge badge-class">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+                </svg>
+              </span>
+              <div class="manage-card__title">Add Class</div>
+            </div>
+            <div class="field">
+              <label for="new-class-name">Class name</label>
+              <input type="text" id="new-class-name" placeholder="e.g. BSCS - 6" required />
+            </div>
+            <div class="field">
+              <label for="new-class-year">Academic year (optional)</label>
+              <input type="text" id="new-class-year" placeholder="e.g. 2026" />
+            </div>
+          </div>
+          <div>
+            <button class="btn btn-outline" type="submit">
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">
+                <path
+                  d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+              </svg>
+              Add class
+            </button>
+            <div class="just-added" id="class-added-note">✓ Added — now available in dropdowns</div>
+          </div>
+        </form>
+
+        <!-- Add Subject -->
+        <form id="add-subject-form" class="manage-card">
+          <div>
+            <div class="manage-card__header">
+              <span class="manage-card__badge badge-subject">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                </svg>
+              </span>
+              <div class="manage-card__title">Add Subject</div>
+            </div>
+            <div class="field">
+              <label for="subject-class-select">Target Class</label>
+              <select id="subject-class-select" required></select>
+            </div>
+            <div class="field">
+              <label for="new-subject-name">Subject name</label>
+              <input type="text" id="new-subject-name" placeholder="e.g. Operating Systems" required />
+            </div>
+            <div class="field">
+              <label for="subject-teacher-select">Taught by</label>
+              <select id="subject-teacher-select"></select>
+            </div>
+          </div>
+          <div>
+            <button class="btn btn-outline" type="submit">
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">
+                <path
+                  d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+              </svg>
+              Add subject
+            </button>
+            <div class="just-added" id="subject-added-note">✓ Added — now available in dropdowns</div>
+          </div>
+        </form>
+
+        <!-- Add Student -->
+        <form id="add-student-form" class="manage-card">
+          <div>
+            <div class="manage-card__header">
+              <span class="manage-card__badge badge-student">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                </svg>
+              </span>
+              <div class="manage-card__title">Add Student</div>
+            </div>
+            <div class="field">
+              <label for="new-student-seat">Seat number</label>
+              <input type="text" id="new-student-seat" placeholder="e.g. F23-BSCS-045" required />
+            </div>
+            <div class="field">
+              <label for="student-class-select">Target Class</label>
+              <select id="student-class-select" required></select>
+            </div>
+            <div class="field">
+              <label for="new-student-name">Full name</label>
+              <input type="text" id="new-student-name" placeholder="e.g. Jane Doe" required />
+            </div>
+            <div class="field">
+              <label for="new-student-email">Email address</label>
+              <input type="email" id="new-student-email" placeholder="student@email.com" required />
+            </div>
+          </div>
+          <div>
+            <button class="btn btn-outline" type="submit">
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">
+                <path
+                  d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+              </svg>
+              Add student
+            </button>
+            <div class="just-added" id="student-added-note">✓ Added — now in the class roster</div>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- SECTION 2: Mark attendance -->
+    <section class="panel" id="attendance-section">
+      <div class="panel-head">
+        <div>
+          <h2>
+            <span class="panel-icon-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </span>
+            Mark Attendance
+          </h2>
+          <p>Select a class and subject to take roll call for today's session.</p>
+        </div>
+      </div>
+
+      <!-- Filters Row -->
+      <div class="filters-bar">
+        <div class="field">
+          <label for="class-select">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+            </svg>
+            Class
+          </label>
+          <select id="class-select">
+            <option value="">Select a class…</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="subject-select">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+            </svg>
+            Subject
+          </label>
+          <select id="subject-select">
+            <option value="">Select a subject…</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Dynamic Roster Container -->
+      <div id="roster-wrap">
+        <div class="empty-state">
+          <div class="empty-state-icon">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+            </svg>
+          </div>
+          <h3>Choose a Class and Subject</h3>
+          <p>The student roster and roll-call toggles will appear here automatically.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: History -->
+    <section class="panel" id="history-section">
+      <div class="panel-head">
+        <div>
+          <h2>
+            <span class="panel-icon-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </span>
+            Recent Records
+          </h2>
+          <p>Today's entries can still be modified or removed. Earlier sessions are locked for record integrity.</p>
+        </div>
+      </div>
+      <div id="history-wrap">
+        <p class="page-sub" style="margin:0;">Pick a class and subject above to view previous roll records.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-container"></div>
+
+  <script type="module" src="js/teacher.js"></script>
+</body>
+
+</html>

@@ -1,4 +1,4 @@
-// Firebase initialization — uses the CDN ES-module build so this whole app
+// Firebase initialization - uses the CDN ES-module build so this whole app
 // can be deployed to Vercel as plain static files (no bundler needed).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {

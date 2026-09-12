@@ -1,71 +1,55 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Not Registered · Attendance Register</title>
+  <title>Attendance Register | Account setup</title>
+  <meta name="description" content="Complete your student profile and request access to an available class." />
+  <meta name="theme-color" content="#1f5b4b" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Attendance Register | Account setup" />
+  <meta property="og:description" content="Complete your student profile and request access to an available class." />
+  <meta property="og:image" content="/web-app-manifest-512x512.png" />
+  <meta property="og:image:alt" content="Attendance Register app icon" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="512" />
+  <meta property="og:image:height" content="512" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Attendance Register | Account setup" />
+  <meta name="twitter:description" content="Complete your student profile and request access to an available class." />
+  <meta name="twitter:image" content="/web-app-manifest-512x512.png" />
+  <meta name="twitter:image:alt" content="Attendance Register app icon" />
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="Attendance Register" />
+  <link rel="manifest" href="/site.webmanifest" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
+
 <body>
-  <div class="center-page">
-    <div class="center-card">
-      <div class="center-card-icon">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
-        </svg>
+  <div class="auth-shell">
+    <div class="auth-panel" style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;">
+      <div class="auth-card" style="max-width:520px;text-align:center;">
+        <img class="site-logo site-logo--header" src="logo.svg" alt="Attendance Register" style="margin:0 auto 2rem;">
+        <div class="eyebrow-label">Account setup</div>
+        <h1 class="page-title" style="margin-bottom:.75rem;">Finish your profile</h1>
+        <p class="page-sub" id="who">Your account is authenticated. Continue to role setup to request the access you need.</p>
+        <div class="email-pill-display" id="user-pill"><span id="user-email-text">Checking authentication...</span></div>
+        <a class="btn btn-primary" href="student-onboarding.html" style="width:100%;margin-top:1rem;">Continue to profile setup</a>
+        <button class="btn btn-outline" id="signout-btn" type="button" style="width:100%;margin-top:.75rem;">Sign out</button>
       </div>
-
-      <h2>Account Not on Register</h2>
-
-      <div class="email-pill-display" id="user-pill">
-        <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z" />
-          <path d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z" />
-        </svg>
-        <span id="user-email-text">Checking authentication…</span>
-      </div>
-
-      <p id="who">
-        Your email is authenticated with Firebase, but has not yet been registered in the Students or Teachers roster sheet.
-      </p>
-
-      <div style="background:var(--canvas-alt);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem;margin-bottom:1.8rem;text-align:left;">
-        <div style="font-size:0.82rem;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem;">Next Steps</div>
-        <ol style="margin:0;padding-left:1.2rem;font-size:0.88rem;color:var(--text-muted);display:flex;flex-direction:column;gap:0.35rem;">
-          <li>Contact your instructor, CR, or system administrator.</li>
-          <li>Have them add your email to the class register sheet.</li>
-          <li>Once added, sign in again to access your dashboard.</li>
-        </ol>
-      </div>
-
-      <button class="btn btn-outline" id="signout-btn" style="width:100%;padding:0.75rem;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/>
-        </svg>
-        Sign out / Switch account
-      </button>
     </div>
   </div>
-
-  <script type="module">
-    import { auth } from "./js/firebase-init.js";
-    import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
-    onAuthStateChanged(auth, (user) => {
-      if (user && user.email) {
-        document.getElementById("user-email-text").textContent = user.email;
-        document.getElementById("who").innerHTML =
-          `<strong>${user.email}</strong> is not listed in the Students or Teachers database sheet yet.`;
-      }
-    });
-
-    document.getElementById("signout-btn").addEventListener("click", async () => {
-      await signOut(auth);
-      window.location.href = "index.html";
-    });
-  </script>
+  <script type="module" src="js/not-registered.js"></script>
 </body>
+
 </html>

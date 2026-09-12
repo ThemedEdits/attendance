@@ -1,129 +1,227 @@
-# Attendance Register
+# Attendance Register 2.0
 
-A free-stack attendance app: **Firebase Auth** for sign-in, a **Google Sheet** as the
-only database, a **Google Apps Script** web app as the secure API in between, and a
-plain HTML/CSS/JS frontend deployed on **Vercel**. No paid services required.
+A production-oriented attendance platform built around Firebase Authentication, Firestore, Vercel serverless APIs, and Google Sheets as the human-readable class register.
 
-```
-Browser (Vercel static site)
-   │  Firebase ID token on every request
-   ▼
-Google Apps Script Web App  ──►  Google Sheet (Students / Teachers / Subjects /
-   (verifies token + role,           Classes / Attendance / Settings)
-    enforces every permission)
-```
+## Architecture
 
-## Why the backend looks the way it does
+The application now follows the intended central-backend model:
 
-Your Apps Script `/exec` URL is public. Anyone can call it directly with curl,
-bypassing your frontend entirely — so the frontend **cannot** be where access
-control lives. `backend/Code.gs` re-checks on every single request:
-
-1. **Who is calling** — the Firebase ID token sent from the browser is verified
-   against Google itself (via the Identity Toolkit REST API), so it can't be
-   forged or replayed with a different email.
-2. **What they're allowed to touch** — the verified email is looked up fresh in
-   your Students/Teachers sheet on every call. A student can only ever read
-   their own rows. A teacher/CR can only read or write attendance for the
-   classes/subjects listed against their row — never anyone else's.
-
-Nothing the client sends (a role, a class id, an "isAdmin" flag) is ever
-trusted — it's always re-derived from the sheet, server-side.
-
-## 1. Update your Google Sheet
-
-Your `Attendance` sheet already matches what the backend expects. Add/confirm
-these columns (exact header spelling, any column order) on the other five
-sheets:
-
-| Sheet      | Columns |
-|------------|---------|
-| `Students` | `StudentID`, `Name`, `Email`, `ClassID` |
-| `Teachers` | `TeacherID`, `Name`, `Email`, `Role`, `AssignedClassIDs`, `AssignedSubjectIDs` |
-| `Classes`  | `ClassID`, `ClassName` |
-| `Subjects` | `SubjectID`, `SubjectName`, `ClassID` |
-| `Attendance` | `AttendanceID`, `Date`, `SubjectID`, `StudentID`, `Status` (already exists) |
-| `Settings` | `Key`, `Value` (optional row: `AdminEmails` → `you@school.com,other@school.com`) |
-
-Notes:
-- **`Email`** must exactly match the email each person uses to sign in
-  (case doesn't matter — it's lower-cased before comparing).
-- **`Role`** in Teachers is just a label ("Teacher" or "CR") shown in the UI —
-  permissions come entirely from the two `AssignedClassIDs`/`AssignedSubjectIDs`
-  columns, so a CR is simply a Teacher row scoped to one class.
-- **`AssignedClassIDs`** / **`AssignedSubjectIDs`** are comma-separated, e.g.
-  `CLS001,CLS002`. Fill in whichever fits — a CR usually gets one ClassID; a
-  subject teacher might list several SubjectIDs across different classes.
-- Row 12 in your screenshot (`ATT...` with Student ID `v`) looks like test/typo
-  data — worth deleting before going live.
-
-## 2. Update the Apps Script backend
-
-1. Open your Sheet → **Extensions → Apps Script**.
-2. Replace the existing script with the contents of `backend/Code.gs`.
-3. **Project Settings** (gear icon, left sidebar) → **Script Properties** → **Add script property**:
-   - Name: `FIREBASE_API_KEY`
-   - Value: `AIzaSyBDBeX8TJnUoyG2l-23bMko6q8pMgiC40E` (your Firebase Web API key —
-     this is a public client key, safe to store here; it's used only to ask
-     Google "is this ID token valid, and whose is it?")
-4. **Deploy → New deployment**:
-   - Type: **Web app**
-   - Execute as: **Me**
-   - Who has access: **Anyone**
-5. Copy the new `/exec` URL. If it's different from the one already in
-   `js/api.js`, update `APPS_SCRIPT_URL` there.
-   - Every time you edit `Code.gs`, use **Deploy → Manage deployments → Edit → New version**
-     so the live `/exec` URL picks up your changes (saving alone isn't enough).
-
-## 3. Firebase Auth
-
-Already set up on your end (Email/Password + Google providers enabled, config
-already dropped into `js/firebase-init.js`). Nothing else to do here — sign-up
-is open to anyone with an email, but access to any data is still gated by
-whether that email is on your Students/Teachers sheet.
-
-## 4. Deploy the frontend to Vercel
-
-1. Push this folder to a GitHub repo (or drag-and-drop it into the Vercel
-   dashboard).
-2. In Vercel: **New Project → Import** your repo.
-3. Framework preset: **Other** (it's static HTML/CSS/JS — no build step, no
-   environment variables needed).
-4. Deploy. That's it — `vercel.json` and `.vercelignore` are already set up.
-
-## 5. Test it
-
-- Add yourself to the `Teachers` sheet with your real login email, `Role = CR`,
-  and `AssignedClassIDs` set to one real `ClassID`.
-- Sign in on the deployed site → you should land on **Mark attendance**, only
-  see that one class, and be able to save a roll call.
-- Add a student row with your (or a test account's) email → sign in with that
-  account → you should land on **Your attendance**, view-only, filtered to
-  only that student's own records.
-- Try signing in with an email that's on neither sheet → you should land on
-  the "not registered" page.
-
-## File map
-
-```
-index.html            Sign in / sign up
-student.html + js      Student dashboard (view own attendance)
-teacher.html + js      Teacher/CR dashboard (mark, edit, delete attendance)
-not-registered.html    Shown when a signed-in email isn't on the sheet
-css/styles.css         Shared design system
-js/firebase-init.js    Firebase app + auth setup
-js/api.js              Calls to the Apps Script backend (attaches ID token)
-js/guard.js            Redirects based on session + role before showing a page
-backend/Code.gs        The Apps Script — paste into your Sheet's script editor
+```text
+Browser
+  │
+  ├── Firebase Authentication
+  │
+  ▼
+Vercel API /api
+  │
+  ├── Firestore: source of truth for users, classes, memberships,
+  │              subjects, requests and attendance
+  │
+  └── Google APIs
+       │
+       └── CR-owned Google Sheet: register / reporting surface
 ```
 
-## A couple of things worth knowing
+There is **one central backend**, not one Apps Script deployment per CR. Google OAuth is handled by the Vercel serverless backend. Google refresh tokens are encrypted before being stored in Firestore.
 
-- **Free tier limits**: Apps Script web apps have daily quotas (URL Fetch
-  calls, execution time) on a personal Google account — generous for a single
-  school, but worth knowing about if usage grows a lot.
-- **Firebase free (Spark) plan** covers Email/Password and Google sign-in with
-  no cost at normal usage.
-- **Vercel free (Hobby) plan** is enough for a static site like this.
-- If you ever want an "admin" who can see everything regardless of assigned
-  scope, add their email to `Settings!AdminEmails` — no code changes needed.
+## Roles and authorization
+
+### Student
+- Creates an account with email/password or Google.
+- Completes profile information.
+- Enters a class code and institutional seat number.
+- Sends a class enrollment request.
+- Waits for CR/teacher approval.
+- After approval, sees only their own attendance.
+
+### Teacher
+- Creates an account and selects Teacher.
+- Enters a class code during setup.
+- Access is a request, not an automatic privilege.
+- A CR approves the teacher's class membership.
+- A CR assigns subjects to the teacher.
+- Backend authorization allows the teacher to write attendance only for assigned subjects.
+
+### Class Representative
+- Selects Class Representative during setup.
+- CR activation requires the configured authorization email and invite code.
+- Connects Google through OAuth.
+- Links one editable Google Sheet.
+- Creates the class and receives a generated eight-character class code.
+- Approves teachers and students.
+- Creates subjects and assigns teachers.
+- Manages the class workspace.
+
+The role selected in the browser is never treated as sufficient authorization. Every API request is authenticated with a Firebase ID token and checked against Firestore membership/assignment data.
+
+## Firestore data model
+
+```text
+users/{uid}
+  email
+  name
+  photoURL
+  role: student | teacher | cr | pending
+  roleStatus: approved | pending | incomplete
+  profileCompleted
+
+classes/{classId}
+  name
+  university
+  semester
+  department
+  batch
+  section
+  academicYear
+  classCode
+  crUid
+  spreadsheetId
+  spreadsheetName
+  status
+
+classes/{classId}/members/{uid}
+  role: student | teacher | cr
+  status: approved | pending
+  seatNumber
+  name
+  fatherName
+  email
+
+subjects/{subjectId}
+  name
+  code
+  classId
+  teacherUid
+  sheetTitle
+  sheetId
+
+enrollmentRequests/{requestId}
+  uid
+  type: student | teacher
+  classId
+  name
+  email
+  seatNumber
+  status: Pending | Approved | Rejected
+  createdAt
+  reviewedAt
+  reviewedBy
+  decisionNote
+
+attendance/{classId_subjectId}/sessions/{YYYY-MM-DD}
+  classId
+  subjectId
+  date
+  marks: { uid: 0 | 1 }
+  updatedBy
+  updatedAt
+
+googleConnections/{uid}
+  refreshTokenEncrypted
+  scopes
+  updatedAt
+```
+
+Firestore client access is intentionally denied in `firestore.rules`. All application data access goes through the authenticated Vercel API, which gives one authoritative authorization layer.
+
+## Google Sheets behavior
+
+A CR connects Google once and then links a Sheet they can edit. The backend verifies that:
+
+- the URL is a Google Spreadsheet,
+- the file is not trashed,
+- the authorized Google account can edit it,
+- the Sheet is not already linked to another class.
+
+When a class is created, the backend prepares:
+
+- `Class Info`
+- `Students`
+- `Subjects`
+
+When a subject is created, its attendance tab is created automatically. Attendance data is stored in Firestore first and synchronized to the CR's Sheet by the server.
+
+The Sheet is not the security boundary. A teacher never receives unrestricted Sheet credentials or direct write access from the browser. The Vercel API verifies the teacher, class membership, subject assignment, date rules, and attendance payload before changing Firestore or the Sheet.
+
+## Attendance rules
+
+- Future dates are rejected.
+- Today's attendance can be edited during the day.
+- A previous date becomes locked after its first submission.
+- Students cannot write attendance.
+- Teachers can write only their assigned subjects.
+- CRs can manage subjects and attendance for their own classes.
+- Attendance writes do not create arbitrary student records.
+
+## Local setup
+
+1. Install Node.js 20 or newer.
+2. Copy `.env.example` to `.env.local`.
+3. Create a Firebase service account and place its JSON into `FIREBASE_SERVICE_ACCOUNT_JSON` as one line.
+4. Enable Firebase Authentication providers:
+   - Email/Password
+   - Google
+5. Create a Firestore database.
+6. Deploy `firestore.rules`.
+7. Create a Google Cloud OAuth 2.0 Web application client.
+8. Add the exact production callback URL:
+   `https://YOUR-DOMAIN.com/api/google/callback`
+9. Configure the Google OAuth consent screen and request the required Sheets/Drive scopes.
+10. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, and `APP_STATE_SECRET` in Vercel.
+11. Configure `CR_INVITE_EMAILS` and `CR_INVITE_CODE` for authorized CR onboarding.
+12. Deploy the repository to Vercel.
+
+Never commit `.env`, `.env.local`, Firebase service-account JSON, OAuth client secrets, or refresh tokens.
+
+## Vercel environment variables
+
+See `.env.example` for the complete list.
+
+`GOOGLE_TOKEN_ENCRYPTION_KEY` should be a strong secret. The server derives an AES-256-GCM encryption key from it. Refresh tokens are never stored in plaintext.
+
+`APP_ORIGIN` should be set to the production origin, for example `https://attendance.example.com`, to tighten API CORS. Same-origin deployment is recommended.
+
+## Google OAuth production note
+
+Google's OAuth verification requirements depend on the scopes and whether the application is internal or external. The requested Google Sheets and Drive scopes may require consent-screen configuration and Google verification before a public production rollout. This is a Google Cloud deployment requirement, not something that can be completed purely inside the source code.
+
+## Legacy Apps Script
+
+`backend/Code.gs` is retained as a migration/reference implementation for existing deployments. It is **not** the production backend for version 2.0. New deployments should use the Vercel `/api` functions and Firestore model.
+
+Do not create a separate Apps Script deployment for every CR.
+
+## Frontend
+
+The frontend remains plain HTML, CSS, and JavaScript so it can be deployed without a build step. Firebase Auth is loaded from the official CDN ES modules. The application API is same-origin at `/api`.
+
+Main pages:
+
+```text
+index.html                 Sign in / account creation
+student-onboarding.html    Role and profile setup
+student.html               Student attendance dashboard
+teacher.html               Teacher / CR dashboard
+not-registered.html        Legacy access fallback
+```
+
+## Production hardening included
+
+- Server-side Firebase ID-token verification.
+- Firestore server-only data access.
+- Role and membership authorization on every sensitive operation.
+- Subject-level teacher authorization.
+- Google refresh-token encryption at rest.
+- Short-lived OAuth state records.
+- Google Sheet ownership/editability checks.
+- Duplicate class-sheet prevention.
+- Future-date and locked-date attendance validation.
+- Input length and format validation.
+- Same-origin API configuration.
+- Security response headers and a restrictive Content Security Policy in `vercel.json`.
+- No secrets embedded in frontend code.
+- Loading, error, empty, and request states in the existing UI.
+
+## Important deployment boundary
+
+The source tree is production-ready from an application architecture and security perspective, but external services still require the operator's credentials and configuration. In particular, Firebase service-account credentials, Firestore, Firebase Auth providers, Google OAuth consent/client configuration, Vercel environment variables, and the CR authorization list must be configured in the respective consoles before a live deployment can authenticate users or access Google Sheets.

@@ -1,8 +1,7 @@
 import { auth } from "./firebase-init.js";
 
-// Paste your Apps Script deployment's /exec URL here.
-export const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbxoPZ-7Sgzny-oetbBeOplrP087u82ttr2pblSqgUO-MVRvy1_CNB8SsuAiRgtrvl7iBQ/exec";
+// The production API is hosted by Vercel at the same origin.
+export const APPS_SCRIPT_URL = "/api";
 
 class ApiError extends Error {
   constructor(message, code) {
@@ -44,11 +43,8 @@ function waitForCurrentUser() {
 // Response parsing
 // ---------------------------------------------------------------------------
 
-// Apps Script responses bounce through a redirect (script.google.com →
-// script.googleusercontent.com). Occasionally the final leg returns an
-// HTML error page or an empty body even though the script ran fine.
-// This returns a Symbol sentinel for "couldn't parse" so callers can
-// distinguish it from a genuine error object.
+// The API may return an HTML error page during an upstream outage.
+// This sentinel lets callers distinguish that from a valid API error.
 const UNPARSEABLE = Symbol("unparseable");
 
 async function parseResponseTolerant(response) {
@@ -90,7 +86,7 @@ async function requestWithToken(makeRequest, tolerateUnparseable) {
     response = await makeRequest(token);
     parsed = await parseResponseTolerant(response);
 
-    if (parsed !== UNPARSEABLE || response.status !== 404 || tolerateUnparseable) break;
+    if (parsed !== UNPARSEABLE || response.status < 500 || tolerateUnparseable) break;
     await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
     token = await getIdToken(attempt > 0);
   }
@@ -155,7 +151,7 @@ export async function apiPost(action, payload = {}) {
   );
 }
 
-// getBootstrap() is the ONE call dashboards should make on load — it
+// getBootstrap() is the ONE call dashboards should make on load - it
 // returns identity plus every class/subject/student/teacher in one
 // round-trip, instead of six-plus separate ones.
 export const getBootstrap = () => apiGet("bootstrap");
@@ -171,6 +167,23 @@ export const deleteAttendance = (attendanceId) => apiPost("deleteAttendance", { 
 export const addStudent = (payload) => apiPost("addStudent", payload);
 export const addClass = (payload) => apiPost("addClass", payload);
 export const addSubject = (payload) => apiPost("addSubject", payload);
+export const getEnrollment = () => apiGet("enrollment");
+export const getEnrollmentRequests = () => apiGet("enrollmentRequests");
+export const submitEnrollment = (payload) => apiPost("submitEnrollment", payload);
+export const reviewEnrollment = (payload) => apiPost("reviewEnrollment", payload);
+export const saveProfile = (payload) => apiPost("saveProfile", payload);
+export const getGoogleConnection = () => apiGet("googleConnection");
+export const connectGoogleSheet = (url) => apiPost("connectGoogleSheet", { url });
+
+export async function startGoogleConnection() {
+  const user = auth.currentUser || await waitForCurrentUser();
+  if (!user) throw new ApiError("You're not signed in.", "AUTH_REQUIRED");
+  const token = await user.getIdToken();
+  const response = await fetch("/api/google/start", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body.url) throw new ApiError(body.error || "Could not start Google connection.", body.code || "SERVER_ERROR");
+  window.location.assign(body.url);
+}
 
 // ---- Register sheet blueprint (subject grid view + row/column actions) ----
 export const getSubjectSheet = (subjectId) => apiGet("subjectSheet", { subjectId });

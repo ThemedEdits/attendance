@@ -10,7 +10,13 @@ import {
   deleteSubjectSheetRow,
   deleteSubjectSheetColumn,
   renameSubjectSheetRow,
-  ApiError
+  getEnrollmentRequests,
+  reviewEnrollment,
+  getBootstrap,
+  ApiError,
+  getGoogleConnection,
+  startGoogleConnection,
+  connectGoogleSheet
 } from "./api.js";
 import { initCustomSelect } from "./custom-select.js";
 import { showToast, showConfirmModal, getSkeletonTableRows } from "./ui-feedback.js";
@@ -82,7 +88,153 @@ guardPage("staff", async (me, boot) => {
     '<option value="">Myself</option>' +
     teachers.map((t) => `<option value="${t.TeacherID}">${t.Name}${t.Role ? " (" + t.Role + ")" : ""}</option>`).join("");
   csSubjTeacher?.sync();
+  renderEnrollmentRequests(boot.enrollmentRequests || []);
+  if ((me.role || "").toLowerCase() === "cr") {
+    document.getElementById("google-connection-section")?.removeAttribute("hidden");
+    await refreshGoogleConnection();
+  } else {
+    document.getElementById("google-connection-section")?.setAttribute("hidden", "hidden");
+  }
 });
+
+const enrollmentRequestsWrap = document.getElementById("enrollment-requests-wrap");
+const requestCount = document.getElementById("request-count");
+const refreshRequestsBtn = document.getElementById("refresh-requests-btn");
+const googleConnectionStatus = document.getElementById("google-connection-status");
+const connectGoogleBtn = document.getElementById("connect-google-btn");
+const connectSheetBtn = document.getElementById("connect-sheet-btn");
+const sheetUrlField = document.getElementById("sheet-url-field");
+
+async function refreshGoogleConnection() {
+  if (!googleConnectionStatus) return;
+  try {
+    const connection = await getGoogleConnection();
+    if (connection.connected) {
+      googleConnectionStatus.textContent = `Connected${connection.spreadsheetName ? ` · ${connection.spreadsheetName}` : ""}`;
+      googleConnectionStatus.classList.add("is-connected");
+      if (sheetUrlField) sheetUrlField.hidden = true;
+    } else {
+      googleConnectionStatus.textContent = "Not connected";
+      googleConnectionStatus.classList.remove("is-connected");
+      if (sheetUrlField) sheetUrlField.hidden = false;
+    }
+  } catch (error) {
+    googleConnectionStatus.textContent = "Needs setup";
+    console.error(error);
+  }
+}
+
+connectGoogleBtn?.addEventListener("click", async () => {
+  connectGoogleBtn.disabled = true;
+  try { await startGoogleConnection(); }
+  catch (error) { showToast(describeError(error), "error"); connectGoogleBtn.disabled = false; }
+});
+connectSheetBtn?.addEventListener("click", async () => {
+  const input = document.getElementById("sheet-url");
+  const url = input?.value.trim();
+  if (!url) return showToast("Paste your Google Sheet URL first.", "warning");
+  connectSheetBtn.disabled = true;
+  try { await connectGoogleSheet(url); await refreshGoogleConnection(); showToast("Google Sheet connected successfully.", "success"); input.value = ""; }
+  catch (error) { showToast(describeError(error), "error"); }
+  finally { connectSheetBtn.disabled = false; }
+});
+
+
+async function refreshEnrollmentRequests() {
+  if (!enrollmentRequestsWrap) return;
+  refreshRequestsBtn.disabled = true;
+  try {
+    const requests = await getEnrollmentRequests();
+    renderEnrollmentRequests(requests || []);
+  } catch (error) {
+    showToast(describeError(error), "error");
+  } finally {
+    refreshRequestsBtn.disabled = false;
+  }
+}
+
+refreshRequestsBtn?.addEventListener("click", refreshEnrollmentRequests);
+
+function renderEnrollmentRequests(requests) {
+  const list = Array.isArray(requests) ? requests : [];
+  window.__enrollmentRequests = list;
+  if (requestCount) requestCount.textContent = String(list.length);
+  if (!enrollmentRequestsWrap) return;
+
+  if (!list.length) {
+    enrollmentRequestsWrap.innerHTML = emptyState("No pending requests", "New student class requests assigned to you will appear here.");
+    return;
+  }
+
+  enrollmentRequestsWrap.innerHTML = `
+    <div class="enrollment-request-list">
+      ${list.map((request) => `
+        <article class="enrollment-request-card" data-request-id="${escapeHtml(request.RequestID)}">
+          <div class="enrollment-request-main">
+            <div class="enrollment-request-avatar">${escapeHtml(String(request.Name || "S").trim().charAt(0).toUpperCase())}</div>
+            <div class="enrollment-request-details">
+              <h3>${escapeHtml(request.Name || "Unnamed student")}</h3>
+              <p>${escapeHtml(request.Email || "")}</p>
+              <div class="enrollment-request-meta">
+                <span><strong>Seat</strong> ${escapeHtml(request.SeatNumber || "Not provided")}</span>
+                <span><strong>Class</strong> ${escapeHtml(classNameForId(request.ClassID))}</span>
+                <span><strong>Request</strong> ${escapeHtml(request.RequestID || "")}</span>
+              </div>
+            </div>
+          </div>
+          <div class="enrollment-request-actions">
+            <button type="button" class="btn btn-outline request-action reject" data-action="reject" data-request-id="${escapeHtml(request.RequestID)}">Reject</button>
+            <button type="button" class="btn btn-primary request-action" data-action="approve" data-request-id="${escapeHtml(request.RequestID)}">Approve</button>
+          </div>
+        </article>
+      `).join("")}
+    </div>`;
+
+  enrollmentRequestsWrap.querySelectorAll(".request-action").forEach((button) => {
+    button.addEventListener("click", () => handleEnrollmentDecision(button));
+  });
+}
+
+function classNameForId(id) {
+  return allClasses.find((item) => String(item.ClassID) === String(id))?.ClassName || String(id || "Unknown class");
+}
+
+async function handleEnrollmentDecision(button) {
+  const requestId = button.dataset.requestId;
+  const decision = button.dataset.action;
+  if (!requestId || !decision) return;
+
+  const card = button.closest(".enrollment-request-card");
+  const request = (window.__enrollmentRequests || []).find((item) => String(item.RequestID) === String(requestId));
+  const className = request ? classNameForId(request.ClassID) : "this class";
+  const ok = await showConfirmModal({
+    title: decision === "approve" ? "Approve enrollment?" : "Reject enrollment?",
+    body: decision === "approve"
+      ? `This will add <strong>${escapeHtml(request?.Name || "the student")}</strong> to <strong>${escapeHtml(className)}</strong>'s Students list and subject registers.`
+      : `This will reject <strong>${escapeHtml(request?.Name || "the student")}</strong>'s request for <strong>${escapeHtml(className)}</strong>.`,
+    confirmLabel: decision === "approve" ? "Approve" : "Reject",
+    cancelLabel: "Cancel",
+    danger: decision === "reject"
+  });
+  if (!ok) return;
+
+  button.disabled = true;
+  const sibling = card?.querySelectorAll(".request-action");
+  sibling?.forEach((el) => { el.disabled = true; });
+  try {
+    await reviewEnrollment({ requestId, decision });
+    showToast(decision === "approve" ? "Student approved and added to the register." : "Enrollment request rejected.", "success");
+    await refreshEnrollmentRequests();
+    const boot = await getBootstrap();
+    allClasses = boot.classes || allClasses;
+    allSubjects = boot.subjects || allSubjects;
+    allStudents = boot.students || allStudents;
+    renderClassOptions();
+  } catch (error) {
+    showToast(describeError(error), "error");
+    sibling?.forEach((el) => { el.disabled = false; });
+  }
+}
 
 function evictSubjectFromCaches(subjectId) {
   const sid = String(subjectId);
@@ -132,7 +284,7 @@ function updateBackfillNotice() {
   const isPast = dateInput.value && dateInput.value !== today;
   if (isPast) {
     backfillNoticeText.textContent =
-      `You're marking ${formatDisplayDate(dateInput.value)} — a past date you missed. This can only be saved once, and it locks immediately after.`;
+      `You're marking ${formatDisplayDate(dateInput.value)} - a past date you missed. This can only be saved once, and it locks immediately after.`;
     backfillNotice.style.display = "flex";
   } else {
     backfillNotice.style.display = "none";
@@ -187,7 +339,7 @@ async function onSubjectChange() {
       <div class="table-responsive-container">
         <table class="ledger">
           <thead><tr><th>Student ID</th><th>Name</th><th>Mark</th></tr></thead>
-          <tbody>${getSkeletonTableRows(5, 3)}</tbody>
+          <tbody>${getSkeletonTableRows(5, 4)}</tbody>
         </table>
       </div>
     `;
@@ -233,13 +385,14 @@ function getVisibleRoster() {
   const q = searchQuery.trim().toLowerCase();
   if (!q) return roster;
   return roster.filter((r) =>
-    String(r.StudentID).toLowerCase().includes(q) || String(r.Name).toLowerCase().includes(q)
+    String(r.StudentID).toLowerCase().includes(q) ||
+    String(r.Name).toLowerCase().includes(q)
   );
 }
 
 function renderRoster() {
   if (!roster.length) {
-    rosterWrap.innerHTML = emptyState("No students in this class yet", "Add one in 'Add to the Register' above — it will show up here immediately.");
+    rosterWrap.innerHTML = emptyState("No students in this class yet", "Add one in 'Add to the Register' above - it will show up here immediately.");
     return;
   }
   if (isRosterLocked) { renderLockedRoster(); return; }
@@ -273,7 +426,7 @@ function renderRoster() {
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
           </svg>
         </span>
-        <input type="text" id="roster-search" placeholder="Search by seat number or name…" autocomplete="off" />
+        <input type="text" id="roster-search" placeholder="Search by Student ID or name…" autocomplete="off" />
       </div>
     </div>
 
@@ -300,7 +453,7 @@ function renderRoster() {
           <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
         </svg>
         <span>${isPastDate
-      ? "This is a past date you missed — it can be saved once, then it locks for good."
+      ? "This is a past date you missed - it can be saved once, then it locks for good."
       : "Changes for today can be updated anytime before midnight. Previous dates are locked."}</span>
       </div>
       <button class="btn btn-primary" id="save-btn">
@@ -312,7 +465,7 @@ function renderRoster() {
     </div>
   `;
 
-   const searchInput = document.getElementById("roster-search");
+  const searchInput = document.getElementById("roster-search");
   searchInput.addEventListener("input", (e) => {
     searchQuery = e.target.value;
     renderRosterRows();
@@ -502,7 +655,7 @@ function renderLockedRoster() {
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
           </svg>
         </span>
-        <input type="text" id="roster-search" placeholder="Search by seat number or name…" autocomplete="off" />
+        <input type="text" id="roster-search" placeholder="Search by Student ID or name…" autocomplete="off" />
       </div>
     </div>
     <div class="table-responsive-container">
@@ -548,7 +701,7 @@ async function onSaveClick() {
   const step2 = await showConfirmModal({
     title: "Submit and Sync Register",
     body: isPastDate
-      ? `This is a past date — once submitted, it locks immediately and can never be edited again, by anyone. Are you sure this is correct?`
+      ? `This is a past date - once submitted, it locks immediately and can never be edited again, by anyone. Are you sure this is correct?`
       : "Once submitted, this roll call will be stored in your official register and will lock at the end of the day. Do you want to submit now?",
     confirmLabel: isPastDate ? "Yes, lock it in" : "Yes, save attendance",
     danger: isPastDate
@@ -567,7 +720,7 @@ async function onSaveClick() {
     });
 
     if (result === null) {
-      showToast("Save may not have completed cleanly — re-syncing from the server.", "warning");
+      showToast("Save may not have completed cleanly - re-syncing from the server.", "warning");
       await loadBlueprint(subjectId);
       try {
         attendanceBySubject[subjectId] = await getAttendance({ subjectId });
@@ -589,7 +742,7 @@ async function onSaveClick() {
       const skipped = (result && result.results ? result.results : []).filter((x) => x.action === "skipped");
       if (skipped.length) {
         showToast(
-          `Saved ${result.results.length - skipped.length} of ${result.results.length} — ${skipped.length} student(s) aren't on this subject's sheet.`,
+          `Saved ${result.results.length - skipped.length} of ${result.results.length} - ${skipped.length} student(s) aren't on this subject's sheet.`,
           "warning"
         );
       } else {
@@ -802,7 +955,7 @@ function renderBlueprintTable() {
     return `
       <tr class="bp-row" data-row="${r.sheetRowNumber}">
         <td class="bp-cell bp-cell--id">
-          <span class="student-id-code">${escapeHtml(r.studentId || "—")}</span>
+          <span class="student-id-code">${escapeHtml(r.studentId || "-")}</span>
         </td>
         <td class="bp-cell bp-cell--name">
           <span style="font-weight:600;">${escapeHtml(r.name || "Unnamed")}</span>
@@ -1038,18 +1191,39 @@ document.getElementById("add-class-form").addEventListener("submit", async (e) =
   e.preventDefault();
   const nameInput = document.getElementById("new-class-name");
   const yearInput = document.getElementById("new-class-year");
+  const universityInput = document.getElementById("new-class-university");
+  const semesterInput = document.getElementById("new-class-semester");
+  const departmentInput = document.getElementById("new-class-department");
+  const batchInput = document.getElementById("new-class-batch");
+  const sectionInput = document.getElementById("new-class-section");
   const className = nameInput.value.trim();
-  if (!className) return;
+  if (!className || !universityInput.value.trim() || !semesterInput.value.trim() || !departmentInput.value.trim() || !batchInput.value.trim() || !sectionInput.value.trim()) {
+    showToast("Complete all class details before creating the class.", "warning");
+    return;
+  }
 
   const btn = e.target.querySelector("button[type=submit]");
   btn.disabled = true;
   btn.innerHTML = `<span class="modern-spinner" style="width:14px;height:14px;border-width:2px;border-top-color:currentColor;"></span> Adding…`;
   try {
-    const result = await addClass({ className, academicYear: yearInput.value.trim() });
-    allClasses.push({ ClassID: result.classId, ClassName: result.className });
+    const result = await addClass({
+      className,
+      academicYear: yearInput.value.trim(),
+      university: universityInput.value.trim(),
+      semester: semesterInput.value.trim(),
+      department: departmentInput.value.trim(),
+      batch: batchInput.value.trim(),
+      section: sectionInput.value.trim()
+    });
+    allClasses.push(result);
     renderClassOptions();
     nameInput.value = "";
     yearInput.value = "";
+    universityInput.value = "";
+    semesterInput.value = "";
+    departmentInput.value = "";
+    batchInput.value = "";
+    sectionInput.value = "";
     flashAdded("class-added-note");
     showToast(`Class "${result.className}" successfully registered.`, "success");
   } catch (err) {

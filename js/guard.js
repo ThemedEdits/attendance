@@ -21,9 +21,12 @@ export function guardPage(requiredRole, onReady) {
       const boot = await getBootstrap();
       const me = boot.me;
 
-      if (me.role !== requiredRole) {
-        // Signed in, but this isn't their dashboard — send them to the right one.
-        window.location.href = me.role === "student" ? "student.html" : "teacher.html";
+      const isStaff = me.role === "teacher" || me.role === "cr";
+      const roleMatches = requiredRole === "staff" ? isStaff : me.role === requiredRole;
+
+      if (!roleMatches) {
+        // Signed in, but this isn't their dashboard - send them to the right one.
+        window.location.href = me.role === "student" ? "student.html" : isStaff ? "teacher.html" : "student-onboarding.html";
         return;
       }
 
@@ -41,7 +44,7 @@ export function guardPage(requiredRole, onReady) {
         return;
       }
 
-      // Keep the Firebase session when Apps Script or the network is unavailable.
+      // Keep the Firebase session when the API or network is unavailable.
       console.error("Unable to load the current user from the API:", err);
     }
   });

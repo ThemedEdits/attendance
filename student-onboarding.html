@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Complete Profile | Attendance Register</title>
+  <meta name="description" content="Complete your Attendance Register profile and request the access level you need.">
+  <meta name="theme-color" content="#171a18"><meta name="robots" content="noindex,nofollow">
+  <link rel="icon" type="image/svg+xml" href="/logo.svg"><link rel="manifest" href="/site.webmanifest">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header class="app-header"><div class="app-header__brand"><img class="site-logo site-logo--header" src="logo.svg" alt="Attendance Register"></div><div class="app-header__who"><span class="role-badge">Profile setup</span><span class="user-email-text" id="user-email">Loading...</span><button class="btn-ghost" id="signout-btn" type="button">Sign out</button></div></header>
+<main class="container onboarding-page">
+  <div class="page-header-row"><div><div class="eyebrow-label">Account setup</div><h1 class="page-title">Complete your profile</h1><p class="page-sub">Choose the role that matches your responsibilities. Access is enforced by the server, not by the selection in this form.</p></div></div>
+  <div id="page-error" class="error-box" hidden></div>
+  <section class="onboarding-grid" id="profile-view">
+    <div class="panel onboarding-panel">
+      <div class="panel-head"><div><h2><span class="panel-icon-wrap">1</span>Your identity</h2><p>Your Firebase account email is already verified for this session.</p></div></div>
+      <form id="profile-form" class="auth-form" novalidate>
+        <div class="field"><label for="profile-name">Full name</label><input id="profile-name" type="text" autocomplete="name" maxlength="80" required></div>
+        <div class="field"><label>Choose your role</label><div class="role-choice-grid">
+          <button type="button" class="role-choice" data-role="student"><strong>Student</strong><span>Request access to a class and view your own attendance.</span></button>
+          <button type="button" class="role-choice" data-role="teacher"><strong>Teacher</strong><span>Request class access, then receive subject-level assignments.</span></button>
+          <button type="button" class="role-choice" data-role="cr"><strong>Class Representative</strong><span>Create and manage a class after CR authorization.</span></button>
+        </div></div>
+        <div class="field" id="seat-field" hidden><label for="seat-number">Seat number</label><input id="seat-number" type="text" maxlength="40" placeholder="e.g. 23122214" autocomplete="off"><small class="field-help">Use the exact seat number assigned by your institution.</small></div>
+        <div class="field" id="class-code-field" hidden><label for="class-code">Class code</label><input id="class-code" type="text" maxlength="20" placeholder="e.g. CS24A7K9" autocomplete="off"><small class="field-help">Teachers use the code shared by the Class Representative.</small></div>
+        <div class="field" id="cr-code-field" hidden><label for="cr-code">CR authorization code</label><input id="cr-code" type="password" maxlength="100" placeholder="Enter your authorized invite code" autocomplete="off"><small class="field-help">Only an authorized CR invite can activate CR creation privileges.</small></div>
+        <button class="btn btn-primary onboarding-submit" id="save-profile-btn" type="submit" disabled>Continue</button>
+      </form>
+    </div>
+    <div class="panel onboarding-panel"><div class="panel-head"><div><h2><span class="panel-icon-wrap">2</span>What happens next?</h2><p>Your role determines the secure workflow.</p></div></div>
+      <div class="security-callout"><div class="security-callout__icon">✓</div><div><strong>Student</strong><span>Enter your seat number and class code, then wait for approval.</span></div></div>
+      <div class="security-callout"><div class="security-callout__icon">✓</div><div><strong>Teacher</strong><span>Request access to a class. The CR approves you before you can work with subjects.</span></div></div>
+      <div class="security-callout"><div class="security-callout__icon">✓</div><div><strong>CR</strong><span>Authorized CRs connect their Google account and class Sheet, then create the class workspace.</span></div></div>
+    </div>
+  </section>
+  <section class="panel pending-panel" id="pending-view" hidden><div class="pending-status-icon">✓</div><div><div class="eyebrow-label">Request submitted</div><h2 id="pending-title">Waiting for approval</h2><p id="pending-copy">Your request has been sent to the Class Representative.</p><div class="request-summary" id="request-summary"></div><div class="pending-actions"><button class="btn btn-primary" id="refresh-status-btn" type="button">Check status</button><button class="btn btn-outline" id="edit-profile-btn" type="button">Change role</button></div></div></section>
+</main><div id="toast-root" class="toast-container"></div><script type="module" src="js/student-onboarding.js"></script>
+</body></html>

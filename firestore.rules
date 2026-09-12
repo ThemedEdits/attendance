@@ -1,0 +1,8 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All application data is server-authoritative. The Vercel API verifies
+    // Firebase ID tokens and enforces role/class/subject permissions.
+    match /{document=**} { allow read, write: if false; }
+  }
+}
